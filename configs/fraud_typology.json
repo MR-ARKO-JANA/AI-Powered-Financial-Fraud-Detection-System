@@ -1,0 +1,16 @@
+{
+    "thresholds": {
+        "high_amount": 10000.0,
+        "high_velocity_count": 5,
+        "impossible_travel_speed_kmh": 1000.0
+    },
+    "lists": {
+        "blacklisted_merchants": ["darkwebstore", "shadyelectronics", "anonymousvpn"],
+        "suspicious_devices": ["emulator", "torbrowser", "rootedphone"]
+    },
+    "behavioral_rules": {
+        "check_new_device": true,
+        "check_location_change": true,
+        "amount_anomaly_multiplier": 3.0
+    }
+}
