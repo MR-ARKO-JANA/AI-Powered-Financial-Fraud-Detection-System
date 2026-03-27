@@ -1,131 +1,216 @@
+"""
+rules_engine.py — Configurable, rule-based fraud-indicator engine.
+
+Applies static thresholds, list matching, and behavioral analysis on
+transaction DataFrames to generate a per-row checklist of suspicious
+indicators and a composite risk score (0-100).
+"""
+
 import json
+import logging
 import pandas as pd
-from typing import Dict, Any, List
+from typing import Any, Dict, Optional
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+
+# ── Config loader ───────────────────────────────────────────────────────────
 
 def load_config(config_path: str = "configs/fraud_typology.json") -> Dict[str, Any]:
+    """Load the fraud-typology configuration from a JSON file."""
     with open(config_path, "r") as f:
-        return json.load(f)
+        config = json.load(f)
+    logger.info("Loaded config from %s", config_path)
+    return config
 
-def apply_rules(df: pd.DataFrame, config: Dict[str, Any], historical_df: pd.DataFrame = None) -> pd.DataFrame:
+
+# ── Helper: safe column accessor ───────────────────────────────────────────
+
+def _safe_get(row: pd.Series, col: str, default=None):
+    """Return row[col] if the column exists and is not NaN, else *default*."""
+    val = row.get(col, default)
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return default
+    return val
+
+
+# ── Main engine ─────────────────────────────────────────────────────────────
+
+def build_user_norms(historical_df: Optional[pd.DataFrame]) -> Dict[str, Any]:
+    """Precompute behavioural norms for all clients to avoid costly recalculation during live streaming."""
+    user_norms: Dict[str, Any] = {}
+    if historical_df is not None and not historical_df.empty:
+        for client_id, group in historical_df.groupby("client_id"):
+            methods_set = set(group["use_chip"].dropna().astype(str).str.lower().unique()) if "use_chip" in group.columns else set()
+            locations_set = set(group["merchant_city"].dropna().astype(str).str.lower().unique()) if "merchant_city" in group.columns else set()
+            sum_amt = float(group["amount"].sum()) if "amount" in group.columns else 0.0
+            count_amt = int(len(group)) if "amount" in group.columns else 0
+            
+            norm: Dict[str, Any] = {
+                "known_methods": methods_set,
+                "known_locations": locations_set,
+                "sum_amount": sum_amt,
+                "count_amount": count_amt,
+                "avg_amount": (sum_amt / count_amt) if count_amt > 0 else 0.0,
+            }
+            user_norms[str(client_id)] = norm
+    return user_norms
+
+def apply_rules(
+    df: pd.DataFrame,
+    config: Dict[str, Any],
+    historical_df: Optional[pd.DataFrame] = None,
+    precomputed_norms: Optional[Dict[str, Any]] = None,
+) -> pd.DataFrame:
     """
-    Applies fraud typology rules to generate indicators.
-    Historical DF can be provided to pre-build chronological norms.
+    Apply fraud-typology rules and return the DataFrame enriched with:
+      • suspicious_indicators_checklist  (list[str])
+      • rule_risk_score                  (int, 0-100)
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The batch of transactions to score.
+    config : dict
+        Fraud-typology config (thresholds, lists, behavioral_rules).
+    historical_df : pd.DataFrame, optional
+        Past transactions used to build per-user behavioural norms on the fly.
+    precomputed_norms : dict, optional
+        Pass precomputed norms dictionary (from build_user_norms) directly for extreme performance.
     """
     df = df.copy()
-    
+
     thresholds = config.get("thresholds", {})
     lists = config.get("lists", {})
     behavioral = config.get("behavioral_rules", {})
-    
-    user_norms = {}
-    
-    # 1. Pre-fill norms using ONLY historical_df (fixes the self-inclusion bug)
-    if historical_df is not None and not historical_df.empty:
-        for client_id, group in historical_df.groupby('client_id'):
-            user_norms[client_id] = {
-                'known_methods': set(group['use_chip'].dropna().astype(str).str.lower().unique()),
-                'known_locations': set(group['merchant_city'].dropna().astype(str).str.lower().unique()),
-                'sum_amount': group['amount'].sum(),
-                'count_amount': len(group['amount'])
-            }
-            if user_norms[client_id]['count_amount'] > 0:
-                user_norms[client_id]['avg_amount'] = user_norms[client_id]['sum_amount'] / user_norms[client_id]['count_amount']
-            else:
-                user_norms[client_id]['avg_amount'] = 0.0
 
-    df['suspicious_indicators_checklist'] = [[] for _ in range(len(df))]
-    
-    # Sort chronologically if date exists, so we build history properly across the batch
-    if 'date' in df.columns:
-        df = df.sort_values(by='date')
-    
-    def check_row(row):
-        indicators = []
-        client_id = row.get('client_id')
+    # ── 1. Load or Build per-user norms ────────────────────────
+    if precomputed_norms is not None:
+        user_norms = precomputed_norms
+    else:
+        user_norms = build_user_norms(historical_df)
+
+    # ── 2. Sort chronologically (if date column exists) ─────────────────────
+    has_date = "date" in df.columns
+    if has_date:
+        df = df.sort_values(by="date")
+
+    # ── 3. Row-level rule evaluation ────────────────────────────────────────
+    def _check_row(row: pd.Series) -> list:
+        indicators: list[str] = []
+        client_id = _safe_get(row, "client_id")
+
+        # Initialise norms for first-time users
+        if str(client_id) not in user_norms:
+            user_norms[str(client_id)] = {
+                "known_methods": set(),
+                "known_locations": set(),
+                "sum_amount": 0.0,
+                "count_amount": 0,
+                "avg_amount": 0.0,
+            }
         
-        # Initialize norms for a new user we haven't seen yet
-        if client_id not in user_norms:
-            user_norms[client_id] = {'known_methods': set(), 'known_locations': set(), 'sum_amount': 0.0, 'count_amount': 0, 'avg_amount': 0.0}
-            
-        norms = user_norms[client_id]
-        
-        # 1. Static Thresholds
-        amt = row.get('amount', 0.0)
-        if pd.notna(amt) and isinstance(amt, (int, float)) and amt > thresholds.get('high_amount', 10000.0):
-            indicators.append("High Transaction Amount")
-            
-        if pd.notna(row.get('velocity_1h')) and row.get('velocity_1h') > thresholds.get('high_velocity_count', 5):
-            indicators.append("High Transaction Velocity")
-            
-        if pd.notna(row.get('travel_speed_kmh')) and row.get('travel_speed_kmh') > thresholds.get('impossible_travel_speed_kmh', 1000.0):
-            indicators.append("Impossible Travel Speed")
-            
-        # 2. Lists Matching
-        merch = str(row.get('merchant_id')).lower() if pd.notna(row.get('merchant_id')) else ""
-        if merch in lists.get('blacklisted_merchants', []):
+        # We explicitly cast to Any here to un-confuse strict static type-checkers on dictionary values
+        # Pyre thinks this might be a set interacting with floats without this.
+        norms: Dict[str, Any] = user_norms[str(client_id)]
+
+        # ── 3a. Static thresholds ───────────────────────────────────────────
+        amt = _safe_get(row, "amount", 0.0)
+        if isinstance(amt, (int, float)):
+            if amt > thresholds.get("high_amount", 10_000.0):
+                indicators.append("High Transaction Amount")
+
+        velocity = _safe_get(row, "velocity_1h")
+        if velocity is not None and isinstance(velocity, (int, float)):
+            if velocity > thresholds.get("high_velocity_count", 5):
+                indicators.append("High Transaction Velocity")
+
+        travel_speed = _safe_get(row, "travel_speed_kmh")
+        if travel_speed is not None and isinstance(travel_speed, (int, float)):
+            if travel_speed > thresholds.get("impossible_travel_speed_kmh", 1000.0):
+                indicators.append("Impossible Travel Speed")
+
+        # ── 3b. List matching ───────────────────────────────────────────────
+        merch = str(_safe_get(row, "merchant_id", "")).lower()
+        if merch and merch in [m.lower() for m in lists.get("blacklisted_merchants", [])]:
             indicators.append("Blacklisted Merchant")
-            
-        method_val = str(row.get('use_chip')).lower() if pd.notna(row.get('use_chip')) else ""
-        if method_val in lists.get('suspicious_devices', []):
+
+        method_val = str(_safe_get(row, "use_chip", "")).lower()
+        if method_val and method_val in [d.lower() for d in lists.get("suspicious_devices", [])]:
             indicators.append("Suspicious Device")
-            
-        # 3. Behavioral Logic - Compare to historical norms (PRESENT, MISSING, PARTIAL)
-        if behavioral.get('check_new_device', True):
-            if not method_val or method_val == 'nan' or method_val == '':
+
+        # ── 3c. Behavioural rules (vs. historical norms) ────────────────────
+        # New payment method / device check
+        if behavioral.get("check_new_device", True):
+            if not method_val or method_val in ("nan", ""):
                 indicators.append("New Device: PARTIAL (Missing Data)")
-            elif not norms['known_methods']:
+            elif not norms["known_methods"]:
                 indicators.append("New Device: PARTIAL (No Prior History)")
-            elif method_val not in norms['known_methods']:
+            elif method_val not in norms["known_methods"]:
                 indicators.append("New Device: PRESENT")
             else:
                 indicators.append("New Device: MISSING")
-                
-        loc_val = str(row.get('merchant_city')).lower() if pd.notna(row.get('merchant_city')) else ""
-        if behavioral.get('check_location_change', True):
-            if not loc_val or loc_val == 'nan' or loc_val == '':
+
+        # Location change check
+        loc_val = str(_safe_get(row, "merchant_city", "")).lower()
+        if behavioral.get("check_location_change", True):
+            if not loc_val or loc_val in ("nan", ""):
                 indicators.append("Location Change: PARTIAL (Missing Data)")
-            elif not norms['known_locations']:
+            elif not norms["known_locations"]:
                 indicators.append("Location Change: PARTIAL (No Prior History)")
-            elif loc_val not in norms['known_locations']:
+            elif loc_val not in norms["known_locations"]:
                 indicators.append("Location Change: PRESENT")
             else:
                 indicators.append("Location Change: MISSING")
-                
-        amt_multiplier = behavioral.get('amount_anomaly_multiplier', 3.0)
-        
-        # Only flag if amount is statistically much higher than baseline
-        if pd.notna(amt) and isinstance(amt, (int, float)) and norms['avg_amount'] > 0:
-            if amt > norms['avg_amount'] * amt_multiplier:
+
+        # Amount anomaly check
+        amt_multiplier = behavioral.get("amount_anomaly_multiplier", 3.0)
+        if isinstance(amt, (int, float)) and norms["avg_amount"] > 0:
+            if amt > norms["avg_amount"] * amt_multiplier:
                 indicators.append("Amount Anomaly: PRESENT")
-                
-        # 4. Update the running norms for the NEXT row to fix the self-inclusion bug
-        if method_val and method_val != 'nan':
-            norms['known_methods'].add(method_val)
-        if loc_val and loc_val != 'nan':
-            norms['known_locations'].add(loc_val)
-        if pd.notna(amt) and isinstance(amt, (int, float)):
-            norms['sum_amount'] += amt
-            norms['count_amount'] += 1
-            norms['avg_amount'] = norms['sum_amount'] / norms['count_amount']
-            
+
+        # ── 3d. Error-field check (bonus) ───────────────────────────────────
+        err = str(_safe_get(row, "errors", "")).strip()
+        if err and err.lower() not in ("", "nan"):
+            indicators.append(f"Transaction Error: {err}")
+
+        # ── 3e. Update running norms for subsequent rows ────────────────────
+        if method_val and method_val not in ("nan", ""):
+            norms["known_methods"].add(method_val)
+        if loc_val and loc_val not in ("nan", ""):
+            norms["known_locations"].add(loc_val)
+        if isinstance(amt, (int, float)):
+            norms["sum_amount"] += amt
+            norms["count_amount"] += 1
+            norms["avg_amount"] = norms["sum_amount"] / norms["count_amount"]
+
         return indicators
 
-    df['suspicious_indicators_checklist'] = df.apply(check_row, axis=1)
-    
-    # Calculate Ground Truth Risk Score (0-100) based on severity of signals
-    def calc_risk(inds):
+    df["suspicious_indicators_checklist"] = df.apply(_check_row, axis=1)
+
+    # ── 4. Risk score (0-100) ───────────────────────────────────────────────
+    def _calc_risk(indicators: list) -> int:
         score = 0
-        for i in inds:
-            if "PRESENT" in i or "High" in i or "Impossible" in i or "Blacklisted" in i or "Suspicious" in i:
+        for ind in indicators:
+            if any(
+                kw in ind
+                for kw in ("PRESENT", "High", "Impossible", "Blacklisted", "Suspicious", "Error")
+            ):
                 score += 25
-            elif "PARTIAL" in i:
+            elif "PARTIAL" in ind:
                 score += 10
         return min(score, 100)
-        
-    df['rule_risk_score'] = df['suspicious_indicators_checklist'].apply(calc_risk)
-    
-    # If we sorted by date, re-sort it back using original index
-    if 'date' in df.columns:
+
+    df["rule_risk_score"] = df["suspicious_indicators_checklist"].apply(_calc_risk)
+
+    # ── 5. Restore original ordering ────────────────────────────────────────
+    if has_date:
         df = df.sort_index()
-    
+
+    logger.info(
+        "Rules applied — %d rows scored.  Risk distribution:\n%s",
+        len(df),
+        df["rule_risk_score"].describe().to_string(),
+    )
     return df

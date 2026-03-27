@@ -1,0 +1,73 @@
+﻿e:\Final Year Project\app\dashboard.py
+  e:\Final Year Project\app\dashboard.py:115:40 - error: Argument of type "Unknown | None" cannot be assigned to parameter "x" of type "ConvertibleToInt" in function "__new__"
+  ┬á┬áType "Unknown | None" is not assignable to type "ConvertibleToInt"
+  ┬á┬á┬á┬áType "None" is not assignable to type "ConvertibleToInt"
+  ┬á┬á┬á┬á┬á┬á"None" is not assignable to "str"
+  ┬á┬á┬á┬á┬á┬á"None" is incompatible with protocol "Buffer"
+  ┬á┬á┬á┬á┬á┬á┬á┬á"__buffer__" is not present
+  ┬á┬á┬á┬á┬á┬á"None" is incompatible with protocol "SupportsInt"
+  ┬á┬á┬á┬á┬á┬á┬á┬á"__int__" is not present
+  ┬á┬á┬á┬á┬á┬á"None" is incompatible with protocol "SupportsIndex"
+    ... (reportArgumentType)
+  e:\Final Year Project\app\dashboard.py:115:40 - error: Argument of type "Unknown | None" cannot be assigned to parameter "x" of type "ConvertibleToInt" in function "__new__"
+  ┬á┬áType "Unknown | None" is not assignable to type "ConvertibleToInt"
+  ┬á┬á┬á┬áType "None" is not assignable to type "ConvertibleToInt"
+  ┬á┬á┬á┬á┬á┬á"None" is not assignable to "str"
+  ┬á┬á┬á┬á┬á┬á"None" is incompatible with protocol "Buffer"
+  ┬á┬á┬á┬á┬á┬á┬á┬á"__buffer__" is not present
+  ┬á┬á┬á┬á┬á┬á"None" is incompatible with protocol "SupportsInt"
+  ┬á┬á┬á┬á┬á┬á┬á┬á"__int__" is not present
+  ┬á┬á┬á┬á┬á┬á"None" is incompatible with protocol "SupportsIndex" (reportArgumentType)
+  e:\Final Year Project\app\dashboard.py:116:47 - error: Argument of type "Unknown | None" cannot be assigned to parameter "x" of type "ConvertibleToFloat" in function "__new__"
+  ┬á┬áType "Unknown | None" is not assignable to type "ConvertibleToFloat"
+  ┬á┬á┬á┬áType "None" is not assignable to type "ConvertibleToFloat"
+  ┬á┬á┬á┬á┬á┬á"None" is not assignable to "str"
+  ┬á┬á┬á┬á┬á┬á"None" is incompatible with protocol "Buffer"
+  ┬á┬á┬á┬á┬á┬á┬á┬á"__buffer__" is not present
+  ┬á┬á┬á┬á┬á┬á"None" is incompatible with protocol "SupportsFloat"
+  ┬á┬á┬á┬á┬á┬á┬á┬á"__float__" is not present
+  ┬á┬á┬á┬á┬á┬á"None" is incompatible with protocol "SupportsIndex"
+    ... (reportArgumentType)
+  e:\Final Year Project\app\dashboard.py:116:47 - error: Argument of type "Unknown | None" cannot be assigned to parameter "x" of type "ConvertibleToFloat" in function "__new__"
+  ┬á┬áType "Unknown | None" is not assignable to type "ConvertibleToFloat"
+  ┬á┬á┬á┬áType "None" is not assignable to type "ConvertibleToFloat"
+  ┬á┬á┬á┬á┬á┬á"None" is not assignable to "str"
+  ┬á┬á┬á┬á┬á┬á"None" is incompatible with protocol "Buffer"
+  ┬á┬á┬á┬á┬á┬á┬á┬á"__buffer__" is not present
+  ┬á┬á┬á┬á┬á┬á"None" is incompatible with protocol "SupportsFloat"
+  ┬á┬á┬á┬á┬á┬á┬á┬á"__float__" is not present
+  ┬á┬á┬á┬á┬á┬á"None" is incompatible with protocol "SupportsIndex" (reportArgumentType)
+e:\Final Year Project\src\ml_inference.py
+  e:\Final Year Project\src\ml_inference.py:10:7 - error: "configure" is not exported from module "google.generativeai" (reportPrivateImportUsage)
+  e:\Final Year Project\src\ml_inference.py:13:15 - error: "GenerativeModel" is not exported from module "google.generativeai" (reportPrivateImportUsage)
+e:\Final Year Project\src\preprocess.py
+  e:\Final Year Project\src\preprocess.py:51:69 - error: Cannot access attribute "fillna" for class "float"
+  ┬á┬áAttribute "fillna" is unknown (reportAttributeAccessIssue)
+  e:\Final Year Project\src\preprocess.py:51:69 - error: Cannot access attribute "fillna" for class "Number"
+  ┬á┬áAttribute "fillna" is unknown (reportAttributeAccessIssue)
+  e:\Final Year Project\src\preprocess.py:51:69 - error: Cannot access attribute "fillna" for class "number[Any, int | float | complex]"
+  ┬á┬áAttribute "fillna" is unknown (reportAttributeAccessIssue)
+  e:\Final Year Project\src\preprocess.py:51:69 - error: Cannot access attribute "fillna" for class "NAType"
+  ┬á┬áAttribute "fillna" is unknown (reportAttributeAccessIssue)
+  e:\Final Year Project\src\preprocess.py:51:69 - error: Cannot access attribute "fillna" for class "NaTType"
+  ┬á┬áAttribute "fillna" is unknown (reportAttributeAccessIssue)
+  e:\Final Year Project\src\preprocess.py:51:69 - error: Cannot access attribute "fillna" for class "Timestamp"
+  ┬á┬áAttribute "fillna" is unknown (reportAttributeAccessIssue)
+  e:\Final Year Project\src\preprocess.py:51:69 - error: Cannot access attribute "fillna" for class "Timedelta"
+  ┬á┬áAttribute "fillna" is unknown (reportAttributeAccessIssue)
+  e:\Final Year Project\src\preprocess.py:51:69 - error: Cannot access attribute "fillna" for class "ndarray[_AnyShape, dtype[Any]]"
+  ┬á┬áAttribute "fillna" is unknown (reportAttributeAccessIssue)
+  e:\Final Year Project\src\preprocess.py:51:69 - error: Cannot access attribute "fillna" for class "ndarray[_AnyShape, dtype[signedinteger[_64Bit]]]"
+  ┬á┬áAttribute "fillna" is unknown (reportAttributeAccessIssue)
+  e:\Final Year Project\src\preprocess.py:106:50 - error: Argument of type "dict[Unknown, Unknown]" cannot be assigned to parameter "func" of type "PythonFuncType" in function "map"
+  ┬á┬áType "dict[Unknown, Unknown]" is not assignable to type "PythonFuncType" (reportArgumentType)
+e:\Final Year Project\src\rules_engine.py
+  e:\Final Year Project\src\rules_engine.py:57:13 - error: Argument of type "Hashable" cannot be assigned to parameter "key" of type "str" in function "__setitem__"
+  ┬á┬á"Hashable" is not assignable to "str" (reportArgumentType)
+  e:\Final Year Project\src\rules_engine.py:106:13 - error: Argument of type "Unknown | float | None" cannot be assigned to parameter "key" of type "str" in function "__setitem__"
+  ┬á┬áType "Unknown | float | None" is not assignable to type "str"
+  ┬á┬á┬á┬á"float" is not assignable to "str" (reportArgumentType)
+  e:\Final Year Project\src\rules_engine.py:116:33 - error: Argument of type "Unknown | float | None" cannot be assigned to parameter "key" of type "str" in function "__getitem__"
+  ┬á┬áType "Unknown | float | None" is not assignable to type "str"
+  ┬á┬á┬á┬á"float" is not assignable to "str" (reportArgumentType)
+19 errors, 0 warnings, 0 informations
