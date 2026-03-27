@@ -4,5 +4,5 @@ pydantic
 pandas
 requests
 streamlit
-google-generativeai
+google-genai
 python-dotenv
