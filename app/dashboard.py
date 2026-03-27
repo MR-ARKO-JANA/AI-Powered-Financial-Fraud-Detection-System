@@ -35,10 +35,14 @@ with tab1:
         # Step A: Package the data exactly as your FastAPI contract expects
         payload = {
             "transaction_id": tx_id,
+            "client_id": "USER-999",   
             "amount": amount,
-            "ip_address": ip_address,
-            "merchant": merchant,
-            "timestamp": timestamp
+            "date": timestamp,         
+            "merchant_id": merchant,   
+            "use_chip": "Online",      
+            "merchant_city": "Unknown",
+            "velocity_1h": 1,
+            "travel_speed_kmh": 0.0
         }
         
         # Step B: Send it to your running FastAPI server

@@ -1,6 +1,12 @@
+import pandas as pd
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
+
+# --- NEW: Importing the real functions from your teammates ---
+from src.preprocess import preprocess_data
+from src.rules_engine import apply_rules, load_config
+from src.ml_inference import get_ai_risk_score
 
 # 1. Initialize the API
 app = FastAPI(title="Fraud Detection Pipeline API")
@@ -9,61 +15,45 @@ app = FastAPI(title="Fraud Detection Pipeline API")
 # This tells FastAPI exactly what a "messy log" should look like when it arrives.
 class RawTransaction(BaseModel):
     transaction_id: str
+    client_id: str
     amount: float
-    ip_address: str
-    merchant: str
-    timestamp: str
+    date: str
+    merchant_id: str
+    use_chip: Optional[str] = "unknown"
+    merchant_city: Optional[str] = "unknown"
+    velocity_1h: Optional[int] = 0
+    travel_speed_kmh: Optional[float] = 0.0
 
-# --- TEAMMATE PLACEHOLDERS ---
-# You will eventually replace these with imports from Arko, Sidhu, and Subham's files.
 
-def arko_clean_data(raw_tx: RawTransaction):
-    # Simulates Arko cleaning the data and getting the location
-    return {
-        "transaction_id": raw_tx.transaction_id,
-        "date": raw_tx.timestamp.split("T")[0], # Fake date split
-        "amount": raw_tx.amount,
-        "sender": "Victim_User_1",
-        "merchant": raw_tx.merchant.replace("*", " "), # Fake cleaning
-        "location_metadata": "Delhi, IN (Derived from IP)"
-    }
-
-def sidhu_check_rules(clean_data: dict):
-    # Simulates Sidhu checking the fraud_typology.json
-    return [
-        {"indicator": "Login from unrecognized IP/Location", "status": "PRESENT", "reason": "IP mismatch detected"},
-        {"indicator": "Multiple failed login attempts", "status": "MISSING", "reason": "Normal behavior"}
-    ]
-
-def subham_run_ai(clean_data: dict, indicators: list):
-    # Simulates Subham's AI returning a verdict
-    return {
-        "fraud_type": "Account Takeover",
-        "risk_score": 85,
-        "reason": "Sudden location change detected with high transaction amount."
-    }
-# -----------------------------
+# --- 3. INITIALIZE CONFIG ---
+# Load the rules once when the API starts
+CONFIG = load_config("configs/fraud_typology.json")
 
 # 3. The Main Pipeline Route
 @app.post("/analyze")
 async def process_transaction(tx: RawTransaction):
-    """
-    This is the main engine. It takes a raw transaction, passes it through
-    the team's functions, and formats the final Output A, B, and C.
-    """
-    
-    # Step 1: Data Engineering (Arko)
-    clean_summary = arko_clean_data(tx)
-    
-    # Step 2: Rule Checking (Sidhu)
-    checklist = sidhu_check_rules(clean_summary)
-    
-    # Step 3: AI Inference (Subham)
-    verdict = subham_run_ai(clean_summary, checklist)
-    
-    # Step 4: System Architect (Joyce) formats the final response
-    return {
-        "Output_A_Summary": clean_summary,
-        "Output_B_Verdict": verdict,
-        "Output_C_Checklist": checklist
-    }
+    try:
+        # STEP 1: Convert to DataFrame
+        input_df = pd.DataFrame([tx.dict()])
+
+        # STEP 2: Preprocessing
+        cleaned_df = preprocess_data(input_df)
+
+        # STEP 3: Rules Engine
+        final_df = apply_rules(cleaned_df, CONFIG, historical_df=None)
+        result_row = final_df.iloc[0]
+        checklist = result_row.get("suspicious_indicators_checklist", [])
+
+        # STEP 4: AI Inference
+        clean_dict = cleaned_df.iloc[0].to_dict()
+        ai_verdict = get_ai_risk_score(clean_dict, checklist)
+
+        # STEP 5: Return Formatted Response to Streamlit
+        return {
+            "Output_A_Summary": clean_dict,
+            "Output_B_Verdict": ai_verdict,
+            "Output_C_Checklist": checklist
+        }
+
+    except Exception as e:
+        return {"error": f"Pipeline Break: {str(e)}"}
