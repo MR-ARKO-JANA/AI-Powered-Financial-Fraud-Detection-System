@@ -209,7 +209,7 @@ with tab4:
         
         # Calculate KPIs
         total_tx = len(df_logs)
-        fraud_df = df_logs[df_logs['composite_risk_score'] > 50]
+        fraud_df = df_logs[df_logs['composite_risk_score'] >= 50]
         total_fraud = len(fraud_df)
         fraud_prevented_amt = fraud_df['amount'].sum()
         avg_risk = df_logs['composite_risk_score'].mean()

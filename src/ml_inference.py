@@ -3,6 +3,7 @@ import json
 import google.generativeai as genai
 import joblib
 import numpy as np
+from dotenv import load_dotenv
 from src.feature_engineering import prepare_ml_features
 
 # Load environment variables from .env file
@@ -90,6 +91,6 @@ def get_ai_risk_score(clean_data: dict, checklist: list) -> dict:
         # Fallback Logic: If the AI fails or the internet disconnects, return UNKNOWN
         return {
             "fraud_type": "UNKNOWN", 
-            "risk_score": 50, 
+            "risk_score": float(composite_base_score), 
             "reason": f"AI Inference failed or anomalous: {str(e)}"
         }
