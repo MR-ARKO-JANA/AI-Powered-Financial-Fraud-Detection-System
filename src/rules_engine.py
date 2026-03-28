@@ -37,24 +37,34 @@ def _safe_get(row: pd.Series, col: str, default=None):
 
 # ── Main engine ─────────────────────────────────────────────────────────────
 
-def build_user_norms(historical_df: Optional[pd.DataFrame]) -> Dict[str, Any]:
+def build_user_norms(historical_df: pd.DataFrame) -> Dict[str, Any]:
     """Precompute behavioural norms for all clients to avoid costly recalculation during live streaming."""
     user_norms: Dict[str, Any] = {}
     if historical_df is not None and not historical_df.empty:
-        for client_id, group in historical_df.groupby("client_id"):
-            methods_set = set(group["use_chip"].dropna().astype(str).str.lower().unique()) if "use_chip" in group.columns else set()
-            locations_set = set(group["merchant_city"].dropna().astype(str).str.lower().unique()) if "merchant_city" in group.columns else set()
-            sum_amt = float(group["amount"].sum()) if "amount" in group.columns else 0.0
-            count_amt = int(len(group)) if "amount" in group.columns else 0
-            
-            norm: Dict[str, Any] = {
-                "known_methods": methods_set,
-                "known_locations": locations_set,
-                "sum_amount": sum_amt,
-                "count_amount": count_amt,
-                "avg_amount": (sum_amt / count_amt) if count_amt > 0 else 0.0,
+        # 1. Clean data once
+        df = historical_df[["client_id", "amount", "use_chip", "merchant_city"]].copy()
+        df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
+        df["use_chip"] = df["use_chip"].fillna("unknown").astype(str).str.lower()
+        df["merchant_city"] = df["merchant_city"].fillna("unknown").astype(str).str.lower()
+
+        # 2. Fast numeric aggregation
+        agg_res = df.groupby("client_id")["amount"].agg(["sum", "count", "mean"])
+
+        # 3. Fast set building (vectorized groupby unique is fast)
+        # We manually build the dictionaries to avoid the O(N^2) overhead of multiple applies
+        methods_map = df.groupby("client_id")["use_chip"].apply(set).to_dict()
+        locations_map = df.groupby("client_id")["merchant_city"].apply(set).to_dict()
+
+        # 4. Final assembly (fast)
+        for cid, stats in agg_res.iterrows():
+            cid_str = str(cid)
+            user_norms[cid_str] = {
+                "known_methods": methods_map.get(cid, set()),
+                "known_locations": locations_map.get(cid, set()),
+                "sum_amount": float(stats["sum"]),
+                "count_amount": int(stats["count"]),
+                "avg_amount": float(stats["mean"]),
             }
-            user_norms[str(client_id)] = norm
     return user_norms
 
 def apply_rules(

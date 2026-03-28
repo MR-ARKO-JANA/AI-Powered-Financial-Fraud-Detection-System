@@ -50,12 +50,13 @@ try:
     if os.path.isfile(_data_path):
         HISTORICAL_DF = pd.read_csv(_data_path)
         PRECOMPUTED_NORMS = build_user_norms(HISTORICAL_DF)
-        print(f"Loaded bounds for {len(PRECOMPUTED_NORMS)} unique clients.")
+        print(f"✅ Historical context loaded for {len(PRECOMPUTED_NORMS)} unique clients.")
+        print("🚀 SERVER IS LIVE! You can now open the Streamlit Dashboard.")
         del HISTORICAL_DF # Free up RAM immediately!
     else:
         PRECOMPUTED_NORMS = {}
 except Exception as err:
-    print(f"Historical dataset skipped (Not Found or Failed): {err}")
+    print(f"❌ Historical dataset skipped (Not Found or Failed): {err}")
     PRECOMPUTED_NORMS = {}
 
 # 3. The Main Pipeline Route
