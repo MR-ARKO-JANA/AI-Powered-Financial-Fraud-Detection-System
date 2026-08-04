@@ -64,9 +64,9 @@ def build_user_norms(historical_df: Optional[pd.DataFrame]) -> Dict[str, Dict[st
                 historical_df[col] = "unknown" if col != "amount" else 0.0
 
         df = historical_df[["client_id", "amount", "use_chip", "merchant_city"]].copy()
-        df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
-        df["use_chip"] = df["use_chip"].fillna("unknown").astype(str).str.lower()
-        df["merchant_city"] = df["merchant_city"].fillna("unknown").astype(str).str.lower()
+        df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)  # pyright: ignore[reportAttributeAccessIssue]
+        df["use_chip"] = df["use_chip"].fillna("unknown").astype(str).str.lower()  # pyright: ignore[reportAttributeAccessIssue]
+        df["merchant_city"] = df["merchant_city"].fillna("unknown").astype(str).str.lower()  # pyright: ignore[reportAttributeAccessIssue]
 
         agg_res = df.groupby("client_id")["amount"].agg(["sum", "count", "mean"])
         methods_map = df.groupby("client_id")["use_chip"].apply(set).to_dict()

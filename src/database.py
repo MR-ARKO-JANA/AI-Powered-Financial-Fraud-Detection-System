@@ -9,7 +9,7 @@ import sqlite3
 import os
 import json
 import pandas as pd
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DB_PATH = os.path.join(PROJECT_ROOT, "data", "transactions_log.db")
@@ -70,13 +70,13 @@ def init_db():
     conn.close()
 
 
-def log_transaction(clean_data: Dict[str, Any], ai_verdict: Dict[str, Any], checklist: List[str] = None):
+def log_transaction(clean_data: Dict[str, Any], ai_verdict: Dict[str, Any], checklist: Optional[List[str]] = None):
     """Save enriched transaction details to WAL database asynchronously with zero buffering."""
     try:
         conn = get_connection()
         cursor = conn.cursor()
         
-        checklist_str = json.dumps(checklist or [])
+        checklist_str = json.dumps(checklist or [])  # pyright: ignore[reportArgumentType]
 
         cursor.execute('''
             INSERT INTO transaction_logs (

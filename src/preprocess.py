@@ -80,13 +80,13 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
             .str.strip()
         )
         parsed_amounts = pd.to_numeric(clean_amt_str, errors="coerce")
-        df["amount"] = parsed_amounts.fillna(0.0)
+        df["amount"] = parsed_amounts.fillna(0.0)  # pyright: ignore[reportAttributeAccessIssue]
 
     # 2. Merchant ID normalization & Alias merging
     if "merchant_id" in df.columns:
         df["merchant_id"] = (
             df["merchant_id"]
-            .fillna("UNKNOWN")
+            .fillna("UNKNOWN")  # pyright: ignore[reportAttributeAccessIssue]
             .astype(str)
             .str.strip()
             .str.upper()
@@ -104,7 +104,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     if "merchant_city" in df.columns:
         df["merchant_city"] = (
             df["merchant_city"]
-            .fillna("Unknown")
+            .fillna("Unknown")  # pyright: ignore[reportAttributeAccessIssue]
             .astype(str)
             .str.strip()
             .str.title()
@@ -114,7 +114,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     if "merchant_state" in df.columns:
         df["merchant_state"] = (
             df["merchant_state"]
-            .fillna("UNKNOWN")
+            .fillna("UNKNOWN")  # pyright: ignore[reportAttributeAccessIssue]
             .astype(str)
             .str.strip()
             .str.upper()
@@ -124,7 +124,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     if "use_chip" in df.columns:
         df["use_chip"] = (
             df["use_chip"]
-            .fillna("online")
+            .fillna("online")  # pyright: ignore[reportAttributeAccessIssue]
             .astype(str)
             .str.strip()
             .str.capitalize()
@@ -132,13 +132,13 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 
     # 6. Errors field
     if "errors" in df.columns:
-        df["errors"] = df["errors"].fillna("").astype(str).str.strip()
+        df["errors"] = df["errors"].fillna("").astype(str).str.strip()  # pyright: ignore[reportAttributeAccessIssue]
 
     # 7. Zip code formatting
     if "zip" in df.columns:
         df["zip"] = (
             df["zip"]
-            .fillna("00000")
+            .fillna("00000")  # pyright: ignore[reportAttributeAccessIssue]
             .astype(str)
             .str.split(".")
             .str[0]
