@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  finguard-backend:
+    build: .
+    container_name: finguard_backend
+    ports:
+      - "8000:8000"
+    command: python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    restart: always
+
+  finguard-dashboard:
+    build: .
+    container_name: finguard_dashboard
+    ports:
+      - "8501:8501"
+    command: python -m streamlit run app/dashboard.py --server.port 8501 --server.address 0.0.0.0
+    environment:
+      - API_URL=http://finguard-backend:8000
+    depends_on:
+      - finguard-backend
+    restart: always
