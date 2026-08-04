@@ -8,64 +8,81 @@ indicators and a composite risk score (0-100).
 
 import json
 import logging
+import os
 import pandas as pd
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-
-# ── Config loader ───────────────────────────────────────────────────────────
-
-def load_config(config_path: str = "configs/fraud_typology.json") -> Dict[str, Any]:
-    """Load the fraud-typology configuration from a JSON file."""
-    with open(config_path, "r") as f:
-        config = json.load(f)
-    logger.info("Loaded config from %s", config_path)
-    return config
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DEFAULT_CONFIG_PATH = os.path.join(PROJECT_ROOT, "configs", "fraud_typology.json")
 
 
-# ── Helper: safe column accessor ───────────────────────────────────────────
+def load_config(config_path: str = DEFAULT_CONFIG_PATH) -> Dict[str, Any]:
+    """Load fraud-typology configuration from JSON file with defaults."""
+    if os.path.isfile(config_path):
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        logger.info("Loaded config from %s", config_path)
+        return config
+    
+    # Fallback config if file not found
+    return {
+        "thresholds": {
+            "high_amount": 10000.0,
+            "high_velocity_count": 5,
+            "impossible_travel_speed_kmh": 1000.0
+        },
+        "lists": {
+            "blacklisted_merchants": ["DARKWEBSTORE", "DARKWEB*PAY", "SHADYELECTRONICS", "SHADY*ELECTRONICS"],
+            "suspicious_devices": ["emulator", "rooted_android", "unknown_browser"]
+        },
+        "behavioral_rules": {
+            "check_new_device": True,
+            "check_location_change": True,
+            "amount_anomaly_multiplier": 3.0
+        }
+    }
 
-def _safe_get(row: pd.Series, col: str, default=None):
-    """Return row[col] if the column exists and is not NaN, else *default*."""
+
+def _safe_get(row: pd.Series, col: str, default: Any = None) -> Any:
+    """Return row[col] if available and not NaN."""
     val = row.get(col, default)
     if val is None or (isinstance(val, float) and pd.isna(val)):
         return default
     return val
 
 
-# ── Main engine ─────────────────────────────────────────────────────────────
-
-def build_user_norms(historical_df: pd.DataFrame) -> Dict[str, Any]:
-    """Precompute behavioural norms for all clients to avoid costly recalculation during live streaming."""
-    user_norms: Dict[str, Any] = {}
+def build_user_norms(historical_df: Optional[pd.DataFrame]) -> Dict[str, Dict[str, Any]]:
+    """Precompute behavioral norms for all clients for fast live scoring."""
+    user_norms: Dict[str, Dict[str, Any]] = {}
     if historical_df is not None and not historical_df.empty:
-        # 1. Clean data once
+        required_cols = ["client_id", "amount", "use_chip", "merchant_city"]
+        for col in required_cols:
+            if col not in historical_df.columns:
+                historical_df[col] = "unknown" if col != "amount" else 0.0
+
         df = historical_df[["client_id", "amount", "use_chip", "merchant_city"]].copy()
         df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
         df["use_chip"] = df["use_chip"].fillna("unknown").astype(str).str.lower()
         df["merchant_city"] = df["merchant_city"].fillna("unknown").astype(str).str.lower()
 
-        # 2. Fast numeric aggregation
         agg_res = df.groupby("client_id")["amount"].agg(["sum", "count", "mean"])
-
-        # 3. Fast set building (vectorized groupby unique is fast)
-        # We manually build the dictionaries to avoid the O(N^2) overhead of multiple applies
         methods_map = df.groupby("client_id")["use_chip"].apply(set).to_dict()
         locations_map = df.groupby("client_id")["merchant_city"].apply(set).to_dict()
 
-        # 4. Final assembly (fast)
         for cid, stats in agg_res.iterrows():
             cid_str = str(cid)
             user_norms[cid_str] = {
-                "known_methods": methods_map.get(cid, set()),
-                "known_locations": locations_map.get(cid, set()),
+                "known_methods": set(methods_map.get(cid, set())),
+                "known_locations": set(locations_map.get(cid, set())),
                 "sum_amount": float(stats["sum"]),
                 "count_amount": int(stats["count"]),
                 "avg_amount": float(stats["mean"]),
             }
     return user_norms
+
 
 def apply_rules(
     df: pd.DataFrame,
@@ -73,87 +90,84 @@ def apply_rules(
     historical_df: Optional[pd.DataFrame] = None,
     precomputed_norms: Optional[Dict[str, Any]] = None,
 ) -> pd.DataFrame:
-    """
-    Apply fraud-typology rules and return the DataFrame enriched with:
-      • suspicious_indicators_checklist  (list[str])
-      • rule_risk_score                  (int, 0-100)
+    """Apply rules engine and append checklist + risk score."""
+    if df.empty:
+        df["suspicious_indicators_checklist"] = []
+        df["rule_risk_score"] = 0
+        return df
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-        The batch of transactions to score.
-    config : dict
-        Fraud-typology config (thresholds, lists, behavioral_rules).
-    historical_df : pd.DataFrame, optional
-        Past transactions used to build per-user behavioural norms on the fly.
-    precomputed_norms : dict, optional
-        Pass precomputed norms dictionary (from build_user_norms) directly for extreme performance.
-    """
     df = df.copy()
 
     thresholds = config.get("thresholds", {})
     lists = config.get("lists", {})
     behavioral = config.get("behavioral_rules", {})
 
-    # ── 1. Load or Build per-user norms ────────────────────────
+    user_norms: Dict[str, Dict[str, Any]]
     if precomputed_norms is not None:
         user_norms = precomputed_norms
     else:
         user_norms = build_user_norms(historical_df)
 
-    # ── 2. Sort chronologically (if date column exists) ─────────────────────
     has_date = "date" in df.columns
     if has_date:
         df = df.sort_values(by="date")
 
-    # ── 3. Row-level rule evaluation ────────────────────────────────────────
-    def _check_row(row: pd.Series) -> list:
-        indicators: list[str] = []
-        client_id = _safe_get(row, "client_id")
+    def _check_row(row: pd.Series) -> List[str]:
+        indicators: List[str] = []
+        raw_client_id = _safe_get(row, "client_id", "UNKNOWN")
+        client_id_str = str(raw_client_id)
 
-        # Initialise norms for first-time users
-        if str(client_id) not in user_norms:
-            user_norms[str(client_id)] = {
+        if client_id_str not in user_norms:
+            user_norms[client_id_str] = {
                 "known_methods": set(),
                 "known_locations": set(),
                 "sum_amount": 0.0,
                 "count_amount": 0,
                 "avg_amount": 0.0,
             }
-        
-        # We explicitly cast to Any here to un-confuse strict static type-checkers on dictionary values
-        # Pyre thinks this might be a set interacting with floats without this.
-        norms: Dict[str, Any] = user_norms[str(client_id)]
 
-        # ── 3a. Static thresholds ───────────────────────────────────────────
-        amt = _safe_get(row, "amount", 0.0)
-        if isinstance(amt, (int, float)):
-            if amt > thresholds.get("high_amount", 10_000.0):
-                indicators.append("High Transaction Amount")
+        norms: Dict[str, Any] = user_norms[client_id_str]
+
+        # 1. Static Thresholds
+        amt = float(_safe_get(row, "amount", 0.0) or 0.0)
+        high_amt_threshold = float(thresholds.get("high_amount", 10000.0))
+        if amt > high_amt_threshold:
+            indicators.append(f"High Transaction Amount (${amt:,.2f} > ${high_amt_threshold:,.2f})")
 
         velocity = _safe_get(row, "velocity_1h")
-        if velocity is not None and isinstance(velocity, (int, float)):
-            if velocity > thresholds.get("high_velocity_count", 5):
-                indicators.append("High Transaction Velocity")
+        if velocity is not None:
+            try:
+                vel_num = float(velocity)
+                high_vel_thresh = float(thresholds.get("high_velocity_count", 5))
+                if vel_num > high_vel_thresh:
+                    indicators.append(f"High Transaction Velocity ({int(vel_num)} tx/hr)")
+            except (ValueError, TypeError):
+                pass
 
         travel_speed = _safe_get(row, "travel_speed_kmh")
-        if travel_speed is not None and isinstance(travel_speed, (int, float)):
-            if travel_speed > thresholds.get("impossible_travel_speed_kmh", 1000.0):
-                indicators.append("Impossible Travel Speed")
+        if travel_speed is not None:
+            try:
+                speed_num = float(travel_speed)
+                max_speed_thresh = float(thresholds.get("impossible_travel_speed_kmh", 1000.0))
+                if speed_num > max_speed_thresh:
+                    indicators.append(f"Impossible Travel Speed ({speed_num:.1f} km/h)")
+            except (ValueError, TypeError):
+                pass
 
-        # ── 3b. List matching ───────────────────────────────────────────────
-        merch = str(_safe_get(row, "merchant_id", "")).lower()
-        if merch and merch in [m.lower() for m in lists.get("blacklisted_merchants", [])]:
-            indicators.append("Blacklisted Merchant")
+        # 2. List Matching
+        merch = str(_safe_get(row, "merchant_id", "")).upper()
+        blacklisted = [str(m).upper() for m in lists.get("blacklisted_merchants", [])]
+        if merch and any(b in merch for b in blacklisted):
+            indicators.append(f"Blacklisted Merchant ({merch})")
 
         method_val = str(_safe_get(row, "use_chip", "")).lower()
-        if method_val and method_val in [d.lower() for d in lists.get("suspicious_devices", [])]:
-            indicators.append("Suspicious Device")
+        susp_devices = [str(d).lower() for d in lists.get("suspicious_devices", [])]
+        if method_val and method_val in susp_devices:
+            indicators.append(f"Suspicious Device/Method ({method_val})")
 
-        # ── 3c. Behavioural rules (vs. historical norms) ────────────────────
-        # New payment method / device check
+        # 3. Behavioral Rules
         if behavioral.get("check_new_device", True):
-            if not method_val or method_val in ("nan", ""):
+            if not method_val or method_val in ("nan", "unknown", ""):
                 indicators.append("New Device: PARTIAL (Missing Data)")
             elif not norms["known_methods"]:
                 indicators.append("New Device: PARTIAL (No Prior History)")
@@ -162,10 +176,9 @@ def apply_rules(
             else:
                 indicators.append("New Device: MISSING")
 
-        # Location change check
         loc_val = str(_safe_get(row, "merchant_city", "")).lower()
         if behavioral.get("check_location_change", True):
-            if not loc_val or loc_val in ("nan", ""):
+            if not loc_val or loc_val in ("nan", "unknown", ""):
                 indicators.append("Location Change: PARTIAL (Missing Data)")
             elif not norms["known_locations"]:
                 indicators.append("Location Change: PARTIAL (No Prior History)")
@@ -174,23 +187,21 @@ def apply_rules(
             else:
                 indicators.append("Location Change: MISSING")
 
-        # Amount anomaly check
-        amt_multiplier = behavioral.get("amount_anomaly_multiplier", 3.0)
-        if isinstance(amt, (int, float)) and norms["avg_amount"] > 0:
+        amt_multiplier = float(behavioral.get("amount_anomaly_multiplier", 3.0))
+        if amt > 0 and norms["avg_amount"] > 0:
             if amt > norms["avg_amount"] * amt_multiplier:
-                indicators.append("Amount Anomaly: PRESENT")
+                indicators.append(f"Amount Anomaly: PRESENT (${amt:.2f} vs Avg ${norms['avg_amount']:.2f})")
 
-        # ── 3d. Error-field check (bonus) ───────────────────────────────────
         err = str(_safe_get(row, "errors", "")).strip()
-        if err and err.lower() not in ("", "nan"):
+        if err and err.lower() not in ("", "nan", "none"):
             indicators.append(f"Transaction Error: {err}")
 
-        # ── 3e. Update running norms for subsequent rows ────────────────────
-        if method_val and method_val not in ("nan", ""):
+        # Update running norms for client
+        if method_val and method_val not in ("nan", "unknown", ""):
             norms["known_methods"].add(method_val)
-        if loc_val and loc_val not in ("nan", ""):
+        if loc_val and loc_val not in ("nan", "unknown", ""):
             norms["known_locations"].add(loc_val)
-        if isinstance(amt, (int, float)):
+        if amt > 0:
             norms["sum_amount"] += amt
             norms["count_amount"] += 1
             norms["avg_amount"] = norms["sum_amount"] / norms["count_amount"]
@@ -199,14 +210,10 @@ def apply_rules(
 
     df["suspicious_indicators_checklist"] = df.apply(_check_row, axis=1)
 
-    # ── 4. Risk score (0-100) ───────────────────────────────────────────────
-    def _calc_risk(indicators: list) -> int:
+    def _calc_risk(indicators: List[str]) -> int:
         score = 0
         for ind in indicators:
-            if any(
-                kw in ind
-                for kw in ("PRESENT", "High", "Impossible", "Blacklisted", "Suspicious", "Error")
-            ):
+            if any(kw in ind for kw in ("PRESENT", "High", "Impossible", "Blacklisted", "Suspicious", "Error", "Anomaly")):
                 score += 25
             elif "PARTIAL" in ind:
                 score += 10
@@ -214,13 +221,8 @@ def apply_rules(
 
     df["rule_risk_score"] = df["suspicious_indicators_checklist"].apply(_calc_risk)
 
-    # ── 5. Restore original ordering ────────────────────────────────────────
     if has_date:
         df = df.sort_index()
 
-    logger.info(
-        "Rules applied — %d rows scored.  Risk distribution:\n%s",
-        len(df),
-        df["rule_risk_score"].describe().to_string(),
-    )
+    logger.info("Rules applied — %d rows scored.", len(df))
     return df

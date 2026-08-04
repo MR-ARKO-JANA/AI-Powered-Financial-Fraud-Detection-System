@@ -2,98 +2,133 @@ import os
 import json
 import joblib
 import numpy as np
-from google import genai
+import pandas as pd
+from typing import Dict, Any, List
 from dotenv import load_dotenv
-from src.feature_engineering import prepare_ml_features
+from src.feature_engineering import prepare_feature_dataframe, get_trained_pipeline
 
-# Load environment variables from .env file
 load_dotenv()
 
-# We will use the Flash model because it is incredibly fast, which is perfect for real-time transactions
-MODEL_NAME = 'gemini-1.5-flash'
-
-# Load Local ML Model
+MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-try:
-    ml_classifier = joblib.load(os.path.join(PROJECT_ROOT, "models", "fraud_classifier.pkl"))
-except Exception as e:
-    print(f"Warning: Could not load local ML model: {e}")
-    ml_classifier = None
 
-def get_ai_risk_score(clean_data: dict, checklist: list) -> dict:
+# Load Local Fine-Tuned Transformer & RF Ensemble Pipeline
+ml_pipeline = get_trained_pipeline()
+
+
+def _clean_json_response(raw_text: str) -> Dict[str, Any]:
+    """Clean markdown code fences from AI response string and parse JSON."""
+    clean = raw_text.strip()
+    if clean.startswith("```"):
+        clean = clean.split("\n", 1)[-1]
+        if clean.endswith("```"):
+            clean = clean.rsplit("```", 1)[0]
+        elif clean.endswith("```json"):
+            clean = clean.rsplit("```json", 1)[0]
+    clean = clean.replace("```json", "").replace("```", "").strip()
+    return json.loads(clean)
+
+
+def get_ai_risk_score(clean_data: Dict[str, Any], checklist: List[str]) -> Dict[str, Any]:
     """
-    Takes the cleaned data and the rule indicators, calculates a score, 
-    and asks the AI for a final classification.
+    Combines rule checklist, fine-tuned Transformer & Random Forest Ensemble model prediction,
+    and Gemini GenAI reasoning.
     """
-    
-    # --- STEP 1: CALCULATE THE RISK SCORE ---
-    # Count how many indicators denote elevated risk.
+    # 1. Rules Risk Score Calculation
     suspicious_count = 0
     for item in checklist:
-        if any(kw in item for kw in ["PRESENT", "PARTIAL", "High", "Impossible", "Blacklisted", "Suspicious"]):
+        if any(kw in item for kw in ["PRESENT", "PARTIAL", "High", "Impossible", "Blacklisted", "Suspicious", "Anomaly", "Error"]):
             suspicious_count += 1
             
-    total_indicators = len(checklist) if len(checklist) > 0 else 1 # Avoid dividing by zero!
-    
-    # The mathematical formula requested by the project instructions
-    risk_score = (suspicious_count / total_indicators) * 100
-    
-    # --- STEP 2: RUN LOCAL MACHINE LEARNING MODEL ---
+    total_indicators = len(checklist) if len(checklist) > 0 else 1
+    rules_risk_score = (suspicious_count / total_indicators) * 100.0
+
+    # 2. Local Fine-Tuned Transformer & RF Ensemble Model Inference
     ml_fraud_probability = 0.0
-    if ml_classifier is not None:
+    active_pipeline = ml_pipeline or get_trained_pipeline()
+    
+    if active_pipeline is not None:
         try:
-            X_scaled = prepare_ml_features(clean_data)
-            # predict_proba returns [[prob_0, prob_1]]
-            ml_fraud_probability = ml_classifier.predict_proba(X_scaled)[0][1] * 100
+            df_feat = prepare_feature_dataframe(clean_data)
+            # Predict probability using full preprocessed column transformer pipeline
+            probs = active_pipeline.predict_proba(df_feat)[0]
+            ml_fraud_probability = float(probs[1]) * 100.0
         except Exception as e:
-            print(f"Local ML inference failed: {e}")
-            
-    # Combine Scores for the Prompt
-    composite_base_score = (risk_score * 0.5) + (ml_fraud_probability * 0.5)
-    
-    # --- STEP 3: BUILD THE PROMPT FOR THE AI ---
-    # We are writing a letter to the AI, giving it the facts and asking for JSON back.
-    prompt = f"""
-    You are a strictly analytical Fraud Detection AI. 
-    Review this transaction data: {clean_data}
-    Review these flagged indicators from the Rule Engine: {checklist}
-    
-    Calculated Metrics:
-    - Base Rules Risk Score: {risk_score:.2f}/100
-    - Local Machine Learning Probability (Random Forest): {ml_fraud_probability:.2f}%
-    - Composite Baseline Score: {composite_base_score:.2f}/100
-    
-    Classify this transaction into ONLY ONE of the following types:
-    - Account Takeover
-    - Card Skimming
-    - Safe/Legitimate
-    - UNKNOWN (Use this if the data is too weird or you are not confident)
-    
-    Return ONLY a valid JSON object in this exact format:
-    {{"fraud_type": "Your Classification", "risk_score": {composite_base_score:.2f}, "reason": "One short sentence explaining why."}}
-    """
-    
-    # --- STEP 4: CALL THE AI ---
-    try:
-        # Initialize client here to easily pick up the env key
-        client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-        
-        # Send the prompt to Gemini
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt
-        )
-        
-        # Clean up the response to make sure it's pure JSON
-        raw_text = response.text.strip().replace("```json", "").replace("```", "")
-        ai_verdict = json.loads(raw_text)
-        
-        return ai_verdict
-        
-    except Exception as e:
-        # Fallback Logic: If the AI fails or the internet disconnects, return UNKNOWN
-        return {
-            "fraud_type": "UNKNOWN", 
-            "risk_score": float(composite_base_score), 
-            "reason": f"AI Inference failed or anomalous: {str(e)}"
-        }
+            # Fallback to feature matrix if scalar input
+            try:
+                amt = float(clean_data.get("amount", 0.0))
+                vel = int(clean_data.get("velocity_1h", 1))
+                speed = float(clean_data.get("travel_speed_kmh", 0.0))
+                hour = 12
+                probs = active_pipeline.predict_proba([[amt, vel, speed, hour]])[0]
+                ml_fraud_probability = float(probs[1]) * 100.0
+            except Exception as err:
+                print(f"Fine-tuned Transformer ML inference warning: {e} | {err}")
+
+    # Composite Risk Score Calculation
+    composite_base_score = round((rules_risk_score * 0.35) + (ml_fraud_probability * 0.65), 2)
+
+    # Deterministic Classification Fallback
+    if composite_base_score >= 70:
+        default_type = "Account Takeover" if any("Device" in c or "Speed" in c for c in checklist) else "Card Skimming"
+        default_reason = f"Fine-tuned Transformer & RF Ensemble flagged high risk ({composite_base_score:.1f}/100) across preprocessed behavioral features."
+    elif composite_base_score >= 40:
+        default_type = "Unknown Suspicious Activity"
+        default_reason = f"Moderate risk ({composite_base_score:.1f}/100) requires verification of transaction details."
+    else:
+        default_type = "Safe/Legitimate"
+        default_reason = f"Low risk score ({composite_base_score:.1f}/100) with standard user behavior."
+
+    # 3. Call Google Gemini GenAI if API Key is configured
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if api_key:
+        try:
+            from google import genai
+            client = genai.Client(api_key=api_key)
+
+            prompt = f"""
+You are an expert financial fraud investigation AI.
+Review this financial transaction payload:
+{json.dumps(clean_data, indent=2)}
+
+Flagged rule indicators:
+{json.dumps(checklist, indent=2)}
+
+Model Risk Metrics:
+- Rules Engine Risk Score: {rules_risk_score:.1f}/100
+- Fine-Tuned Transformer & RF Ensemble Probability: {ml_fraud_probability:.1f}%
+- Composite Risk Score: {composite_base_score:.1f}/100
+
+Classify this transaction into EXACTLY ONE of the following categories:
+- Account Takeover
+- Card Skimming
+- Safe/Legitimate
+- Unknown Suspicious Activity
+
+Return ONLY a valid JSON object matching this schema:
+{{
+  "fraud_type": "Classification Category",
+  "risk_score": {composite_base_score:.1f},
+  "reason": "Clear concise analytical sentence explaining the decision."
+}}
+"""
+
+            response = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=prompt
+            )
+
+            if response and response.text:
+                ai_verdict = _clean_json_response(response.text)
+                ai_verdict["risk_score"] = float(ai_verdict.get("risk_score", composite_base_score))
+                return ai_verdict
+
+        except Exception as err:
+            print(f"Gemini AI call notice (using local hybrid fallback): {err}")
+
+    # Offline / Fallback Return
+    return {
+        "fraud_type": default_type,
+        "risk_score": float(composite_base_score),
+        "reason": default_reason
+    }
