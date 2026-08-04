@@ -1,60 +1,159 @@
-# FinGuard AI: AI-Powered Financial Fraud Detection System
+# 🛡️ FinGuard AI — Real-Time AI Financial Fraud Detection System
 
-## Overview
-FinGuard AI is an intelligent system capable of automatically analyzing transaction data, detecting suspicious patterns, and identifying potential fraud in real-time. 
+![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-v0.100%2B-009688)
+![Streamlit](https://img.shields.io/badge/Streamlit-v1.30%2B-FF4B4B)
+![Scikit-Learn](https://img.shields.io/badge/Scikit--Learn-Random%20Forest-F7931E)
+![Google Gemini](https://img.shields.io/badge/Google--Gemini-GenAI-8E44AD)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-With the rapid increase in digital financial transactions (online banking, UPI, digital wallets), financial fraud has become more sophisticated. Traditional rule-based systems often struggle to handle the scale and complexity of modern fraud. FinGuard AI addresses this by providing an automated AI/ML pipeline to process messy logs, detect behavioral anomalies, and classify fraud into actionable categories.
+FinGuard AI is an enterprise-ready intelligent financial fraud detection pipeline that automatically processes raw transaction logs, extracts behavioral anomalies, executes rule-based static & dynamic thresholding, runs local Random Forest machine learning classification, and generates explainable natural language fraud verdicts via Google Gemini GenAI.
 
-## 🛡️ Key Features
-- **Data Ingestion & Preprocessing**: Automatically cleans messy transaction logs (JSON/CSV), standardizes fields, and extracts location data from IP addresses.
-- **Behavioral Feature Extraction**: Identifies sudden location changes, device swaps, high transaction velocity, and impossible travel speeds.
-- **AI-Powered Classification**: Uses machine learning to categorize transactions into:
-    - **Account Takeover**
-    - **Card Skimming / Cloning**
-    - **Safe / Legitimate**
-    - **Unknown Suspicious Activity**
-- **Risk Scoring**: Assigns an interpretable score (0-100) based on the ratio of detected suspicious indicators.
-- **Suspicious Indicator Checklist**: Provides a transparent breakdown of why a transaction was flagged (PRESENT, MISSING, or PARTIAL).
+---
 
-## 📊 System Workflow
-1. **Input**: Transaction logs (JSON/CSV) containing transaction IDs, timestamps, amounts, device IDs, and IP addresses.
-2. **Preprocessing**: Handing missing values, standardizing merchant names (e.g., merging `AMZN*MKTP` into `AMAZON`), and date parsing.
-3. **Feature Extraction**: Building behavioral norms (per-client history) to identify anomalies like "Amount Anomaly" or "New Device".
-4. **Fraud Detection Model**: Passing structured features to the ML inference engine for classification and risk scoring.
-5. **Output**: Structured summary, fraud classification, and a detailed indicators checklist.
+## 🌟 Key Features
+
+- **⚡ Real-Time & Batch Analysis**: Single transaction sandbox and bulk CSV/JSON file log processor.
+- **🔍 Smart Data Preprocessing**: Currency string cleaning (`$`, `,`), alias normalization (`AMZN*MKTP` → `AMAZON`), and IP-to-Geolocation resolution.
+- **📊 Multi-Layer Behavioral Profiling**:
+  - Precomputes per-user historical norms (30-day average transaction amount, known devices, known cities).
+  - High velocity detection (>5 tx/hr), impossible travel speed (>1,000 km/h), blacklisted merchant flags.
+- **🤖 Hybrid ML & GenAI Inference**:
+  - Local **Random Forest Classifier** trained on synthetic behavioral transaction data.
+  - **Google Gemini API** (`google-genai` SDK) for structured natural language fraud reasoning.
+  - Full **offline fallback mode** to operate without external API keys.
+- **📡 Built-in Real-Time Live Monitor**: Stream transactions live directly inside the Streamlit dashboard or via the CLI streamer (`mock_stream.py`).
+- **📈 Rich Risk Intelligence Dashboard**: Plotly charts for risk distributions, fraud typology pie charts, and aggregate KPI metrics.
+
+---
+
+## 🏗️ System Architecture
+
+```
+                               ┌───────────────────────────┐
+                               │ Raw Transaction Payload   │
+                               └─────────────┬─────────────┘
+                                             │
+                                             ▼
+                               ┌───────────────────────────┐
+                               │   Data Preprocessing      │
+                               │ (IP Geoloc & Alias Clean) │
+                               └─────────────┬─────────────┘
+                                             │
+                                             ▼
+                               ┌───────────────────────────┐
+                               │     Rules Engine          │
+                               │ (Behavioral Norm Check)   │
+                               └─────────────┬─────────────┘
+                                             │
+                                             ▼
+                               ┌───────────────────────────┐
+                               │  Random Forest Classifier │
+                               │   (Scikit-Learn Model)    │
+                               └─────────────┬─────────────┘
+                                             │
+                                             ▼
+                               ┌───────────────────────────┐
+                               │  Google Gemini GenAI      │
+                               │  (Explainable Reasoning)  │
+                               └─────────────┬─────────────┘
+                                             │
+                                             ▼
+                               ┌───────────────────────────┐
+                               │ SQLite DB Log & Analytics │
+                               └───────────────────────────┘
+```
+
+---
 
 ## 🚀 Getting Started
-### 1. Installation
-Ensure you have a Python environment set up, then install the dependencies:
+
+### 1. Prerequisites & Installation
+
+Clone the repository and install the dependencies:
+
 ```bash
+git clone https://github.com/MR-ARKO-JANA/AI-Powered-Financial-Fraud-Detection-System.git
+cd AI-Powered-Financial-Fraud-Detection-System
 pip install -r requirements.txt
 ```
 
-### 2. Configuration
-Create a `.env` file in the root directory and add your Gemini API Key:
+### 2. Environment Setup (Optional for GenAI Reasoning)
+
+Create a `.env` file in the root directory:
+
 ```env
-GEMINI_API_KEY="your_actual_key_here"
+GEMINI_API_KEY="your_google_gemini_api_key_here"
 ```
 
-### 3. Launching the System
-Run the provided batch script to start both the backend and frontend:
+*Note: If no API key is set, FinGuard AI automatically runs in hybrid Random Forest + Rules fallback mode.*
+
+### 3. Training / Generating Synthetic Models & Data
+
+Train the local ML classifier and generate the seed dataset:
+
 ```bash
-./run.bat
+python train_model.py
 ```
-- **FastAPI Backend**: `http://127.0.0.1:8000`
-- **Streamlit Dashboard**: `http://localhost:8501`
 
-## 🛠️ Built With
-- **FastAPI**: Backend pipeline orchestration and REST API.
-- **Streamlit**: Interactive dashboard for manual entry and batch log processing.
-- **Pandas**: Data cleaning and feature engineering.
-- **Google Gemini API**: Advanced AI inference for fraud classification and reasoning.
-- **Pydantic**: Data validation and contract enforcement.
+### 4. Launching the Application
 
-## 🔮 Future Improvements
-- **Explainable AI**: Real-time natural language explanations for fraud detection decisions.
-- **Network Analysis**: Using graph analysis to detect connections between suspicious wallets/accounts.
-- **Live Monitoring**: Real-time streaming dashboards for financial security teams.
+#### On Windows:
+```cmd
+run.bat
+```
+
+#### On Linux / macOS:
+```bash
+chmod +x run.sh
+./run.sh
+```
+
+- **FastAPI REST API**: `http://127.0.0.1:8000`
+- **Streamlit Interactive Dashboard**: `http://localhost:8501`
 
 ---
-*Developed as part of the Final Year Project: AI-Powered Financial Fraud Detection System.*
+
+## 🌐 API Reference
+
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/health` | `GET` | Health check & system component status |
+| `/analyze` | `POST` | Process & score a single raw transaction |
+| `/analyze_batch` | `POST` | Process & score an array of transactions |
+| `/analytics` | `GET` | Retrieve aggregate fraud KPIs & typologies |
+| `/logs/clear` | `POST` | Clear SQLite transaction log database |
+
+### Example Payload (`POST /analyze`):
+
+```json
+{
+  "transaction_id": "TXN-9001",
+  "client_id": "USER-105",
+  "amount": 4200.00,
+  "date": "2026-03-22T10:30:00Z",
+  "merchant_id": "DARKWEB*PAY",
+  "use_chip": "Online",
+  "merchant_city": "Unknown",
+  "velocity_1h": 9,
+  "travel_speed_kmh": 1400.0,
+  "ip_address": "185.220.101.5"
+}
+```
+
+---
+
+## 🧪 Real-Time Live Streaming Simulation
+
+To run an autonomous CLI live data stream into the backend:
+
+```bash
+python mock_stream.py
+```
+
+Or open **Tab 3 ("Live Stream Monitor")** inside the Streamlit Dashboard and toggle **Start Live Stream**.
+
+---
+
+## 📄 License
+Distributed under the MIT License.
