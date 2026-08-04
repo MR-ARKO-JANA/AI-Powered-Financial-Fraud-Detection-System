@@ -2,7 +2,11 @@ fastapi
 uvicorn
 pydantic
 pandas
+numpy
 requests
 streamlit
 google-genai
 python-dotenv
+scikit-learn
+joblib
+plotly
