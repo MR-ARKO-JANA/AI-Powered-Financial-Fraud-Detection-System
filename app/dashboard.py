@@ -16,7 +16,7 @@ API_URL = os.environ.get("API_URL", "http://127.0.0.1:8000")
 # Page Config
 st.set_page_config(
     page_title="FinGuard AI — Fraud Detection & Alert Refinement",
-    page_icon="🛡️",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -76,7 +76,7 @@ st.markdown("""
 # Header Render
 st.markdown("""
 <div class="header-banner">
-    <div class="header-title">🛡️ FinGuard AI</div>
+    <div class="header-title">FinGuard AI</div>
     <div class="header-subtitle">Real-Time Financial Fraud Detection, Tabular Transformer & Active Model Refinement</div>
 </div>
 """, unsafe_allow_html=True)
@@ -91,14 +91,14 @@ def check_api():
 
 api_online = check_api()
 if not api_online:
-    st.sidebar.error("⚠️ Backend API Offline! Launch with `uvicorn api.main:app`")
+    st.sidebar.error("Backend API Offline! Launch with `uvicorn api.main:app`")
 else:
-    st.sidebar.success("✅ FastAPI Backend Connected")
+    st.sidebar.success("FastAPI Backend Connected")
 
-st.sidebar.markdown("### ⚙️ System Settings")
+st.sidebar.markdown("### System Settings")
 st.sidebar.info("Model: MLP Neural Net + Random Forest + ExtraTrees Voting Ensemble.")
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🚀 Startup Pitch Showcase")
+st.sidebar.markdown("### Startup Pitch Showcase")
 st.sidebar.markdown("[🌐 Open Presentation Landing Page](http://127.0.0.1:8000/showcase)")
 
 # Dynamic metrics from API
@@ -106,9 +106,9 @@ try:
     metrics_resp = requests.get(f"{API_URL}/metrics", timeout=2)
     if metrics_resp.status_code == 200:
         metrics_data = metrics_resp.json()
-        st.sidebar.markdown(f"📊 **DB Rows**: `{metrics_data.get('database_rows', 'N/A')}`")
+        st.sidebar.markdown(f"**DB Rows**: `{metrics_data.get('database_rows', 'N/A')}`")
         auth_status = "Enabled" if metrics_data.get("auth_enabled") else "Disabled (dev)"
-        st.sidebar.markdown(f"🔐 **Auth**: `{auth_status}`")
+        st.sidebar.markdown(f"**Auth**: `{auth_status}`")
 except Exception:
     pass
 
@@ -118,9 +118,9 @@ st.sidebar.markdown("⚡ **Refinement Engine**: `Active Learning Enabled`")
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "⚡ Single Transaction Test",
     "📂 Bulk Log Processing",
-    "📡 Live Stream Monitor",
+    "Live Stream Monitor",
     "🚨 Model Alerts & Refinement",
-    "📈 Risk Intelligence & Analytics",
+    "Risk Intelligence & Analytics",
     "ℹ️ System Specifications"
 ])
 
@@ -143,7 +143,7 @@ with tab1:
             ip_address = st.text_input("IP Address", "185.220.101.5")
 
         timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-        btn_submit = st.form_submit_button("🔍 Analyze Transaction Now", use_container_width=True)
+        btn_submit = st.form_submit_button("Analyze Transaction Now", use_container_width=True)
 
     if btn_submit:
         payload = {
@@ -194,9 +194,9 @@ with tab1:
                     if risk_score >= 70:
                         st.error(f"🚨 CRITICAL FRAUD ALERT: {fraud_type.upper()}")
                     elif risk_score >= 40:
-                        st.warning(f"⚠️ SUSPICIOUS ACTIVITY: {fraud_type.upper()}")
+                        st.warning(f"SUSPICIOUS ACTIVITY: {fraud_type.upper()}")
                     else:
-                        st.success("✅ SAFE TRANSACTION")
+                        st.success("SAFE TRANSACTION")
 
                     st.write(f"**AI Reasoning:** {verdict.get('reason')}")
                     if alert_info:
@@ -238,7 +238,7 @@ with tab2:
                     "ip_address": str(r.get("ip_address", "127.0.0.1"))
                 })
 
-            if st.button("🚀 Process Batch & Trigger Alerts", type="primary"):
+            if st.button("Process Batch & Trigger Alerts", type="primary"):
                 with st.spinner("Analyzing batch transactions..."):
                     resp = requests.post(f"{API_URL}/analyze_batch", json=tx_list, timeout=30)
 
@@ -264,7 +264,7 @@ with tab2:
 
 # TAB 3: Live Stream Monitor
 with tab3:
-    st.subheader("📡 Real-Time Live Stream Monitor")
+    st.subheader("Real-Time Live Stream Monitor")
     stream_active = st.toggle("Start Live Stream", value=False)
     if stream_active:
         import random, uuid
@@ -300,7 +300,7 @@ with tab4:
             with st.spinner("Retraining & Refining Tabular Transformer & RF Ensemble Model..."):
                 r_ref = requests.post(f"{API_URL}/model/refine")
                 if r_ref.status_code == 200:
-                    st.success("✅ Model refined & re-deployed successfully!")
+                    st.success("Model refined & re-deployed successfully!")
                 else:
                     st.error("Refinement failed.")
 
@@ -320,7 +320,7 @@ with tab4:
                         
                         f_col1, f_col2 = st.columns(2)
                         with f_col1:
-                            if st.button("✅ Confirm Actual Fraud", key=f"conf_{alt['alert_id']}"):
+                            if st.button("Confirm Actual Fraud", key=f"conf_{alt['alert_id']}"):
                                 requests.post(f"{API_URL}/alerts/resolve", json={"alert_id": alt['alert_id'], "confirmed_is_fraud": True})
                                 st.toast(f"Alert {alt['alert_id']} confirmed as fraud!")
                                 st.rerun()
@@ -334,7 +334,7 @@ with tab4:
 
 # TAB 5: Risk Intelligence & Analytics
 with tab5:
-    st.subheader("📈 System Risk Intelligence & Analytics (Zero-Lag Streaming)")
+    st.subheader("System Risk Intelligence & Analytics (Zero-Lag Streaming)")
     try:
         from src.database import fetch_recent_logs
         df_db = fetch_recent_logs(limit=1000)

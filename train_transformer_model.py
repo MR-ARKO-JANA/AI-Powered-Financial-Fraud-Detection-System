@@ -65,17 +65,17 @@ def create_synthetic_preprocessed_dataset(n_samples: int = 12000) -> pd.DataFram
 
 def train_fine_tuned_transformer_rf_ensemble():
     print("==================================================================")
-    print(" 🚀 FINE-TUNING HIGH-ACCURACY TABULAR TRANSFORMER & RF ENSEMBLE MODEL")
+    print(" FINE-TUNING HIGH-ACCURACY TABULAR TRANSFORMER & RF ENSEMBLE MODEL")
     print("==================================================================\n")
     
-    print("⚙️ [1/4] Generating & Preprocessing Multi-Feature Dataset (12,000 samples)...")
+    print("[1/4] Generating & Preprocessing Multi-Feature Dataset (12,000 samples)...")
     df = create_synthetic_preprocessed_dataset(12000)
     
     # Save preprocessed dataset CSV for project reference
     data_dir = os.path.join(PROJECT_ROOT, "data")
     os.makedirs(data_dir, exist_ok=True)
     df.to_csv(os.path.join(data_dir, "clean_transactions.csv"), index=False)
-    print(f"✅ Dataset preprocessed and saved to {os.path.join(data_dir, 'clean_transactions.csv')}")
+    print(f"Dataset preprocessed and saved to {os.path.join(data_dir, 'clean_transactions.csv')}")
     
     # Define Numerical & Categorical Feature Columns
     num_features = ["amount", "velocity_1h", "travel_speed_kmh", "hour_of_day"]
@@ -86,7 +86,7 @@ def train_fine_tuned_transformer_rf_ensemble():
     
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
     
-    print("\n⚙️ [2/4] Constructing ColumnTransformer Pipeline (Scaling + OneHot Encoding)...")
+    print("\n[2/4] Constructing ColumnTransformer Pipeline (Scaling + OneHot Encoding)...")
     preprocessor = ColumnTransformer(
         transformers=[
             ("num", StandardScaler(), num_features),
@@ -94,7 +94,7 @@ def train_fine_tuned_transformer_rf_ensemble():
         ]
     )
     
-    print("⚙️ [3/4] Initializing Tabular MLP/Transformer Neural Net & Random Forest Ensemble...")
+    print("[3/4] Initializing Tabular MLP/Transformer Neural Net & Random Forest Ensemble...")
     # Tabular Deep Learning / MLP Classifier (simulates dense Transformer classification head)
     mlp_model = MLPClassifier(
         hidden_layer_sizes=(128, 64, 32),

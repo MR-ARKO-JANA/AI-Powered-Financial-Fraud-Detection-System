@@ -96,7 +96,7 @@ def generate_sample_transactions_csv(n_records: int = 150) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 def train_and_save():
-    print("🚀 [1/3] Generating synthetic training dataset (10,000 samples)...")
+    print("[1/3] Generating synthetic training dataset (10,000 samples)...")
     df = generate_synthetic_data(10000)
     
     X = df[['amount', 'velocity_1h', 'travel_speed_kmh', 'hour_of_day']]
@@ -104,7 +104,7 @@ def train_and_save():
     
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
     
-    print("⚙️ [2/3] Fitting StandardScaler & Training Random Forest Classifier...")
+    print("[2/3] Fitting StandardScaler & Training Random Forest Classifier...")
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
@@ -113,7 +113,7 @@ def train_and_save():
     model.fit(X_train_scaled, y_train)
     
     y_pred = model.predict(X_test_scaled)
-    print("\n📊 Model Performance Report:")
+    print("\nModel Performance Report:")
     print(classification_report(y_test, y_pred, target_names=["Safe", "Fraud"]))
     
     models_dir = os.path.join(PROJECT_ROOT, "models")
@@ -123,13 +123,13 @@ def train_and_save():
     
     joblib.dump(scaler, os.path.join(models_dir, "scaler.pkl"))
     joblib.dump(model, os.path.join(models_dir, "fraud_classifier.pkl"))
-    print(f"✅ Models saved to: {models_dir}")
+    print(f"Models saved to: {models_dir}")
     
     # Save seed transaction data
     sample_df = generate_sample_transactions_csv(150)
     sample_path = os.path.join(data_dir, "transactions_data.csv")
     sample_df.to_csv(sample_path, index=False)
-    print(f"✅ Seed transactions CSV generated ({len(sample_df)} rows) at: {sample_path}")
+    print(f"Seed transactions CSV generated ({len(sample_df)} rows) at: {sample_path}")
 
 if __name__ == "__main__":
     train_and_save()

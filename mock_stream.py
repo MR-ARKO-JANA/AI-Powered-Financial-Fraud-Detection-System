@@ -29,7 +29,7 @@ def generate_random_transaction():
 
 def stream_data():
     print("==================================================")
-    print("🚀 FinGuard AI — Real-Time Live Data Streamer")
+    print("FinGuard AI — Real-Time Live Data Streamer")
     print(f"Targeting API: {API_URL}")
     print("Press Ctrl+C to stop.")
     print("==================================================\n")
@@ -56,9 +56,9 @@ def stream_data():
                         print(f"  🚨 FRAUD DETECTED: {fraud_type} (Score: {score:.1f}/100)")
                         print(f"     Reason: {verdict.get('reason')}")
                     else:
-                        print(f"  ✅ Safe Transaction (Score: {score:.1f}/100)")
+                        print(f"  Safe Transaction (Score: {score:.1f}/100)")
                 else:
-                    print(f"  ⚠️ API returned status: {response.status_code}")
+                    print(f"  API returned status: {response.status_code}")
             except requests.exceptions.ConnectionError:
                 print("  ❌ Connection Error! Make sure FastAPI server is running on port 8000.")
                 time.sleep(4)

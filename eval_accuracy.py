@@ -12,7 +12,7 @@ PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
 
 def evaluate_system():
     print("==================================================================")
-    print(" 🚀 FINGUARD AI — SYSTEM ACCURACY & PERFORMANCE EVALUATION REPORT")
+    print(" FINGUARD AI — SYSTEM ACCURACY & PERFORMANCE EVALUATION REPORT")
     print("      Prepared for: Google AI Day for Startups")
     print("==================================================================\n")
     
@@ -21,7 +21,7 @@ def evaluate_system():
     scaler_path = os.path.join(PROJECT_ROOT, "models", "scaler.pkl")
     
     if not os.path.exists(model_path) or not os.path.exists(scaler_path):
-        print("⚠️ Models not found. Retraining model first...")
+        print("Models not found. Retraining model first...")
         from train_model import train_and_save
         train_and_save()
         
@@ -61,7 +61,7 @@ def evaluate_system():
     cm = confusion_matrix(y_test, y_pred)
     tn, fp, fn, tp = cm.ravel()
     
-    print("📊 1. MACHINE LEARNING MODEL PERFORMANCE (Random Forest Core):")
+    print("1. MACHINE LEARNING MODEL PERFORMANCE (Random Forest Core):")
     print(f"   • Accuracy        : {ml_acc:.2f}%")
     print(f"   • Precision       : {ml_prec:.2f}% (False Positive Rate: {(fp/(fp+tn)*100):.2f}%)")
     print(f"   • Recall / Sensitivity : {ml_rec:.2f}% (Catching {tp}/{tp+fn} actual frauds)")
@@ -100,13 +100,13 @@ def evaluate_system():
     chk = scored.iloc[0]["suspicious_indicators_checklist"]
     verdict = get_ai_risk_score(cleaned.iloc[0].to_dict(), chk)
     
-    print("🛡️ 3. END-TO-END HYBRID SYSTEM VERIFICATION:")
+    print("3. END-TO-END HYBRID SYSTEM VERIFICATION:")
     print(f"   • Sample Fraud Detection Result: Risk Score = {verdict['risk_score']:.1f}/100")
     print(f"   • Classification Category    : {verdict['fraud_type']}")
     print(f"   • Explainable AI Reason      : {verdict['reason']}\n")
     
     print("==================================================================")
-    print(" ✅ OVERALL SYSTEM ACCURACY SCORE: 99.75%")
+    print(" OVERALL SYSTEM ACCURACY SCORE: 99.75%")
     print("==================================================================")
     
     return {

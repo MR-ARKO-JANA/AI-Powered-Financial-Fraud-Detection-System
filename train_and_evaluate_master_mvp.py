@@ -82,17 +82,17 @@ def generate_master_dataset(n_samples: int = 15000) -> pd.DataFrame:
 
 def run_master_mvp_training_and_evaluation():
     print("===================================================================================")
-    print(" 🚀 FINGUARD AI — MASTER END-TO-END MVP TRAINING & METRICS EVALUATION SUITE")
+    print(" FINGUARD AI — MASTER END-TO-END MVP TRAINING & METRICS EVALUATION SUITE")
     print("===================================================================================\n")
     
     # 1. Master Dataset Ingestion
-    print("⚙️ [1/5] Ingesting & Preprocessing Master Dataset (15,000 Transaction Logs)...")
+    print("[1/5] Ingesting & Preprocessing Master Dataset (15,000 Transaction Logs)...")
     df_master = generate_master_dataset(15000)
     
     data_dir = os.path.join(PROJECT_ROOT, "data")
     os.makedirs(data_dir, exist_ok=True)
     df_master.to_csv(os.path.join(data_dir, "clean_transactions.csv"), index=False)
-    print(f"✅ Preprocessed dataset saved to: {os.path.join(data_dir, 'clean_transactions.csv')}")
+    print(f"Preprocessed dataset saved to: {os.path.join(data_dir, 'clean_transactions.csv')}")
     
     # 2. Feature Columns & Pipeline Construction
     num_features = ["amount", "velocity_1h", "travel_speed_kmh", "hour_of_day"]
@@ -105,7 +105,7 @@ def run_master_mvp_training_and_evaluation():
         X, y, df_master, test_size=0.20, random_state=42, stratify=y
     )
     
-    print("\n⚙️ [2/5] Building ColumnTransformer & Fine-Tuning Transformer & RF Ensemble...")
+    print("\n[2/5] Building ColumnTransformer & Fine-Tuning Transformer & RF Ensemble...")
     preprocessor = ColumnTransformer(
         transformers=[
             ("num", StandardScaler(), num_features),
@@ -130,7 +130,7 @@ def run_master_mvp_training_and_evaluation():
     master_pipeline.fit(X_train, y_train)
     
     # 3. Overall Performance Evaluation
-    print("⚙️ [3/5] Computing Global Model Metrics across 3,000 Independent Test Cases...")
+    print("[3/5] Computing Global Model Metrics across 3,000 Independent Test Cases...")
     y_pred = master_pipeline.predict(X_test)
     y_pred_probs = master_pipeline.predict_proba(X_test)[:, 1]
     
@@ -151,7 +151,7 @@ def run_master_mvp_training_and_evaluation():
     avg_latency_ms = ((t1 - t0) / 500) * 1000.0
     
     print("\n" + "=" * 90)
-    print(" 📊 MASTER MODEL PERFORMANCE SCORECARD:")
+    print(" MASTER MODEL PERFORMANCE SCORECARD:")
     print("=" * 90)
     print(f"   • Overall Accuracy        : {overall_acc:.2f}%")
     print(f"   • Precision Rate          : {overall_prec:.2f}% (Zero False Positives: {fp} false alarms out of {tn+fp} genuine cases)")
@@ -162,7 +162,7 @@ def run_master_mvp_training_and_evaluation():
     print("=" * 90)
     
     # 5. CodeValue Breakdown Metrics
-    print("\n⚙️ [4/5] Evaluating Metric Breakdown per Individual CodeValue...\n")
+    print("\n[4/5] Evaluating Metric Breakdown per Individual CodeValue...\n")
     df_test_eval = df_test.copy()
     df_test_eval["y_true"] = y_test
     df_test_eval["y_pred"] = y_pred
@@ -203,7 +203,7 @@ def run_master_mvp_training_and_evaluation():
     codeval_df.to_csv(os.path.join(data_dir, "codevalue_accuracy_report.csv"), index=False)
     
     # 6. End-to-End Alert Verification
-    print("\n⚙️ [5/5] Testing End-to-End Fraud-to-Alert Pipeline Verification...")
+    print("\n[5/5] Testing End-to-End Fraud-to-Alert Pipeline Verification...")
     sample_fraud_payload = {
         "transaction_id": "TXN-MVP-ALERT-999",
         "client_id": "USER-999",
@@ -235,7 +235,7 @@ def run_master_mvp_training_and_evaluation():
     joblib.dump(master_pipeline, os.path.join(models_dir, "fraud_classifier.pkl"))
     
     print("\n===================================================================================")
-    print(" ✅ MASTER END-TO-END MODEL TRAINING COMPLETE — 100.00% READY FOR DEPLOYMENT!")
+    print(" MASTER END-TO-END MODEL TRAINING COMPLETE — 100.00% READY FOR DEPLOYMENT!")
     print("===================================================================================")
 
 if __name__ == "__main__":

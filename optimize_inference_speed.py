@@ -51,7 +51,7 @@ def benchmark_speed_optimizations():
     latency_pandas_ms = ((t1 - t0) / 1000.0) * 1000.0
     throughput_pandas = int(1000.0 / latency_pandas_ms) if latency_pandas_ms > 0 else 0
     
-    print("📊 1. BASELINE PANDAS DATAFRAME INFERENCE:")
+    print("1. BASELINE PANDAS DATAFRAME INFERENCE:")
     print(f"   • Latency    : {latency_pandas_ms:.2f} ms per transaction")
     print(f"   • Throughput : {throughput_pandas:,} tx/sec per worker node\n")
     
@@ -78,7 +78,7 @@ def benchmark_speed_optimizations():
     print(f"   • Latency    : {latency_numpy_ms:.2f} ms per transaction")
     print(f"   • Speedup    : {((latency_pandas_ms - latency_numpy_ms) / latency_pandas_ms * 100):.1f}% faster\n")
 
-    print("🚀 3. COMPILATION TARGET (ONNX Runtime / Treelite C-Engine):")
+    print("3. COMPILATION TARGET (ONNX Runtime / Treelite C-Engine):")
     print(f"   • Expected Latency   : < {simulated_onnx_ms:.2f} ms per transaction")
     print(f"   • Max Node Capacity : {simulated_onnx_throughput:,} transactions/sec\n")
 

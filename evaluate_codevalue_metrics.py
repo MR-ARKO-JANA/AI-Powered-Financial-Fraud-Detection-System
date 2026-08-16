@@ -50,10 +50,10 @@ def generate_dataset_with_codevalues(n_samples: int = 10000) -> pd.DataFrame:
 
 def train_and_evaluate_by_codevalue():
     print("===================================================================================")
-    print(" 📊 RANDOM FOREST ACCURACY & METRICS EVALUATION ITERATING OVER DISTINCT CODEVALUES")
+    print(" RANDOM FOREST ACCURACY & METRICS EVALUATION ITERATING OVER DISTINCT CODEVALUES")
     print("===================================================================================\n")
     
-    print("⚙️ [1/3] Generating & Splitting Dataset with CodeValue Attributes...")
+    print("[1/3] Generating & Splitting Dataset with CodeValue Attributes...")
     df = generate_dataset_with_codevalues(10000)
     
     feature_cols = ["amount", "velocity_1h", "travel_speed_kmh", "hour_of_day"]
@@ -64,7 +64,7 @@ def train_and_evaluate_by_codevalue():
         X, y, df, test_size=0.25, random_state=42, stratify=y
     )
     
-    print("⚙️ [2/3] Fitting StandardScaler & Training Random Forest Model...")
+    print("[2/3] Fitting StandardScaler & Training Random Forest Model...")
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
@@ -72,7 +72,7 @@ def train_and_evaluate_by_codevalue():
     rf_model = RandomForestClassifier(n_estimators=100, max_depth=8, random_state=42, class_weight="balanced")
     rf_model.fit(X_train_scaled, y_train)
     
-    print("\n⚙️ [3/3] Iterating over each distinct CodeValue & measuring metrics...\n")
+    print("\n[3/3] Iterating over each distinct CodeValue & measuring metrics...\n")
     
     unique_codevalues = sorted(df["codevalue"].unique())
     results_list = []
@@ -128,7 +128,7 @@ def train_and_evaluate_by_codevalue():
     out_path = os.path.join(PROJECT_ROOT, "data", "codevalue_accuracy_report.csv")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     res_df.to_csv(out_path, index=False)
-    print(f"✅ CodeValue accuracy report saved to: {out_path}")
+    print(f"CodeValue accuracy report saved to: {out_path}")
     print("===================================================================================")
     
     return res_df

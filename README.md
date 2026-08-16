@@ -1,4 +1,4 @@
-# 🛡️ FinGuard AI — Real-Time AI Financial Fraud Detection System
+# FinGuard AI — Real-Time AI Financial Fraud Detection System
 
 ![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-v0.100%2B-009688)
@@ -12,25 +12,25 @@ FinGuard AI is an enterprise-ready intelligent financial fraud detection pipelin
 
 ---
 
-## 🌟 Key Features
+## Key Features
 
 - **⚡ Real-Time & Batch Analysis**: Single transaction sandbox and bulk CSV/JSON file log processor.
-- **🔍 Smart Data Preprocessing**: Currency string cleaning (`$`, `,`), alias normalization (`AMZN*MKTP` → `AMAZON`), and IP-to-Geolocation resolution.
-- **📊 Multi-Layer Behavioral Profiling**:
+- **Smart Data Preprocessing**: Currency string cleaning (`$`, `,`), alias normalization (`AMZN*MKTP` → `AMAZON`), and IP-to-Geolocation resolution.
+- **Multi-Layer Behavioral Profiling**:
   - Precomputes per-user historical norms (30-day average transaction amount, known devices, known cities).
   - High velocity detection (>5 tx/hr), impossible travel speed (>1,000 km/h), blacklisted merchant flags.
-- **🤖 Hybrid ML & GenAI Inference**:
+- **Hybrid ML & GenAI Inference**:
   - Local **Random Forest Classifier** trained on synthetic behavioral transaction data.
   - **Google Gemini API** (`google-genai` SDK) for structured natural language fraud reasoning.
   - Full **offline fallback mode** to operate without external API keys.
-- **🔐 Production Security**: API key authentication with RBAC, restricted CORS, sliding window rate limiting.
-- **📡 Built-in Real-Time Live Monitor**: Stream transactions live directly inside the Streamlit dashboard or via the CLI streamer (`mock_stream.py`).
-- **📈 Rich Risk Intelligence Dashboard**: Plotly charts for risk distributions, fraud typology pie charts, and aggregate KPI metrics.
-- **🧪 Comprehensive Test Suite**: Full pytest coverage across preprocessing, rules engine, ML inference, database, alerts, and API.
+- **Production Security**: API key authentication with RBAC, restricted CORS, sliding window rate limiting.
+- **Built-in Real-Time Live Monitor**: Stream transactions live directly inside the Streamlit dashboard or via the CLI streamer (`mock_stream.py`).
+- **Rich Risk Intelligence Dashboard**: Plotly charts for risk distributions, fraud typology pie charts, and aggregate KPI metrics.
+- **Comprehensive Test Suite**: Full pytest coverage across preprocessing, rules engine, ML inference, database, alerts, and API.
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```
                                ┌───────────────────────────┐
@@ -69,7 +69,7 @@ FinGuard AI is an enterprise-ready intelligent financial fraud detection pipelin
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### 1. Prerequisites & Installation
 
@@ -127,7 +127,7 @@ docker compose up --build
 
 ---
 
-## 🔐 Security
+## Security
 
 ### Authentication
 When `FINGUARD_API_KEYS` is set, all API endpoints (except `/health`, `/`, and `/showcase`) require an `X-API-Key` header:
@@ -186,7 +186,7 @@ All endpoints are available at both `/endpoint` and `/v1/endpoint` (versioned).
 
 ---
 
-## 🧪 Testing
+## Testing
 
 Run the full test suite:
 
@@ -211,7 +211,7 @@ Test coverage areas:
 
 ---
 
-## 📡 Real-Time Live Streaming Simulation
+## Real-Time Live Streaming Simulation
 
 To run an autonomous CLI live data stream into the backend:
 
@@ -223,7 +223,7 @@ Or open **Tab 3 ("Live Stream Monitor")** inside the Streamlit Dashboard and tog
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 ├── api/
@@ -263,5 +263,5 @@ Or open **Tab 3 ("Live Stream Monitor")** inside the Streamlit Dashboard and tog
 
 ---
 
-## 📄 License
+## License
 Distributed under the MIT License.
