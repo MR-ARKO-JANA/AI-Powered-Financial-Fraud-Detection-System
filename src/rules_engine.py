@@ -7,13 +7,13 @@ indicators and a composite risk score (0-100).
 """
 
 import json
-import logging
 import os
 import pandas as pd
 from typing import Any, Dict, Optional, List
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DEFAULT_CONFIG_PATH = os.path.join(PROJECT_ROOT, "configs", "fraud_typology.json")
@@ -26,7 +26,7 @@ def load_config(config_path: str = DEFAULT_CONFIG_PATH) -> Dict[str, Any]:
             config = json.load(f)
         logger.info("Loaded config from %s", config_path)
         return config
-    
+
     # Fallback config if file not found
     return {
         "thresholds": {
@@ -224,5 +224,5 @@ def apply_rules(
     if has_date:
         df = df.sort_index()
 
-    logger.info("Rules applied — %d rows scored.", len(df))
+    logger.info("Rules applied - %d rows scored.", len(df))
     return df
