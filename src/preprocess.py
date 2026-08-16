@@ -1,19 +1,19 @@
 """
-preprocess.py — Data cleaning and preprocessing pipeline for transaction data.
+preprocess.py — Production-grade data cleaning and preprocessing pipeline.
 
 Reads raw transactions CSV, cleans and normalizes fields, and outputs a
 clean CSV ready for feature engineering and rules-based analysis.
+Uses HTTPS for IP geolocation with graceful fallback.
 """
 
 import os
+import re
 import pandas as pd
-import logging
-import requests
-import time
 from typing import Dict
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 RAW_DATA_PATH = os.path.join(BASE_DIR, "data", "transactions_data.csv")
@@ -22,15 +22,24 @@ CLEAN_DATA_PATH = os.path.join(BASE_DIR, "data", "clean_transactions.csv")
 # In-memory IP Geolocation Cache to avoid repeated HTTP calls
 _IP_CACHE: Dict[str, str] = {}
 
+# Input sanitization: allowed characters for string fields
+_SAFE_STRING_PATTERN = re.compile(r'[^\w\s\-.*@,/:&()\'"+]', re.UNICODE)
+
+
+def _sanitize_string(value: str, max_length: int = 500) -> str:
+    """Sanitize input string: remove dangerous characters and limit length."""
+    clean = _SAFE_STRING_PATTERN.sub("", str(value))
+    return clean[:max_length].strip()
+
 
 def load_raw_data(path: str = RAW_DATA_PATH) -> pd.DataFrame:
     """Load raw transaction data into a DataFrame."""
     if not os.path.isfile(path):
-        logger.warning(f"Raw data file not found at {path}. Returning empty DataFrame.")
+        logger.warning("Raw data file not found at %s. Returning empty DataFrame.", path)
         return pd.DataFrame()
     logger.info("Loading raw data from %s ...", path)
     df = pd.read_csv(path)
-    logger.info("Loaded %d rows × %d columns", len(df), len(df.columns))
+    logger.info("Loaded %d rows x %d columns", len(df), len(df.columns))
     return df
 
 
@@ -45,17 +54,19 @@ def _resolve_ip_location(ip_str: str) -> str:
         return _IP_CACHE[ip_clean]
 
     try:
-        res = requests.get(f"http://ip-api.com/json/{ip_clean}", timeout=1.5)
+        import requests
+        # Use HTTPS for secure IP resolution
+        res = requests.get(f"https://ip-api.com/json/{ip_clean}", timeout=1.5)
         if res.status_code == 200:
             data = res.json()
             if data.get("status") == "success":
-                city = data.get("city", "Unknown")
-                country = data.get("countryCode", "Unknown")
+                city = _sanitize_string(data.get("city", "Unknown"))
+                country = _sanitize_string(data.get("countryCode", "Unknown"))
                 loc_str = f"{city}, {country}".strip(", ")
                 _IP_CACHE[ip_clean] = loc_str
                 return loc_str
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("IP geolocation lookup failed for %s: %s", ip_clean, e)
 
     fallback_loc = "External IP"
     _IP_CACHE[ip_clean] = fallback_loc
@@ -71,7 +82,6 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 
     # 1. Standardize Amount
     if "amount" in df.columns:
-        # Convert to string, strip '$' and ',', then parse numeric safely
         clean_amt_str = (
             df["amount"]
             .astype(str)
