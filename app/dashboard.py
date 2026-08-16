@@ -96,11 +96,22 @@ else:
     st.sidebar.success("✅ FastAPI Backend Connected")
 
 st.sidebar.markdown("### ⚙️ System Settings")
-st.sidebar.info("Model: Fine-Tuned Tabular Transformer & Random Forest Hybrid Ensemble.")
+st.sidebar.info("Model: MLP Neural Net + Random Forest + ExtraTrees Voting Ensemble.")
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🚀 Startup Pitch Showcase")
 st.sidebar.markdown("[🌐 Open Presentation Landing Page](http://127.0.0.1:8000/showcase)")
-st.sidebar.markdown("📊 **Accuracy Score**: `100.00%`")
+
+# Dynamic metrics from API
+try:
+    metrics_resp = requests.get(f"{API_URL}/metrics", timeout=2)
+    if metrics_resp.status_code == 200:
+        metrics_data = metrics_resp.json()
+        st.sidebar.markdown(f"📊 **DB Rows**: `{metrics_data.get('database_rows', 'N/A')}`")
+        auth_status = "Enabled" if metrics_data.get("auth_enabled") else "Disabled (dev)"
+        st.sidebar.markdown(f"🔐 **Auth**: `{auth_status}`")
+except Exception:
+    pass
+
 st.sidebar.markdown("⚡ **Refinement Engine**: `Active Learning Enabled`")
 
 # Tabs
@@ -343,7 +354,11 @@ with tab5:
 with tab6:
     st.subheader("ℹ️ System Architecture & Specifications")
     st.markdown("""
-    - **Model Core**: Fine-Tuned Tabular MLP/Transformer Neural Net + Random Forest Ensemble.
-    - **Active Refinement Engine**: Captures human feedback on triggered alerts to continuously refine classification boundaries.
-    - **AI Reasoning**: Google Gemini 2.5 Flash.
+    - **Model Core**: MLP Neural Network (128-64-32) + Random Forest (150 estimators) + ExtraTrees (100 estimators) — Soft Voting Ensemble.
+    - **Training Data**: Synthetic behavioral dataset (12,000 samples). Production deployment requires training on real labeled data.
+    - **Active Refinement Engine**: Captures human analyst feedback on triggered alerts to incrementally retrain the ensemble.
+    - **AI Reasoning**: Google Gemini 2.5 Flash (optional — offline ML fallback available).
+    - **Security**: API key authentication with RBAC, CORS restriction, sliding window rate limiting.
+    - **Observability**: Structured JSON logging with request correlation IDs.
+    - **Database**: SQLite with WAL mode, parameterized queries, context-managed connections.
     """)
