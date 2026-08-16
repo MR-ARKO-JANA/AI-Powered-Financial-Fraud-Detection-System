@@ -129,7 +129,7 @@ def train_fine_tuned_transformer_rf_ensemble():
         voting="soft"
     )
     
-    print("⚙️ [4/4] Fitting Fine-Tuned Hybrid Ensemble Pipeline...")
+    print("[4/5] Fitting Hybrid Ensemble Pipeline...")
     full_pipeline = Pipeline([
         ("preprocessor", preprocessor),
         ("classifier", hybrid_ensemble)
@@ -137,7 +137,7 @@ def train_fine_tuned_transformer_rf_ensemble():
     
     full_pipeline.fit(X_train, y_train)
     
-    # Evaluate performance
+    # Evaluate performance on hold-out test set
     y_pred = full_pipeline.predict(X_test)
     y_pred_probs = full_pipeline.predict_proba(X_test)[:, 1]
     
@@ -147,13 +147,43 @@ def train_fine_tuned_transformer_rf_ensemble():
     f1 = f1_score(y_test, y_pred) * 100
     auc = roc_auc_score(y_test, y_pred_probs) * 100
     
-    print("\n📊 FINE-TUNED HYBRID TRANSFORMER/RF ENSEMBLE EVALUATION REPORT:")
-    print(f"   • Overall Accuracy        : {acc:.2f}%")
-    print(f"   • Precision               : {prec:.2f}%")
-    print(f"   • Recall (Fraud Catch)    : {rec:.2f}%")
-    print(f"   • F1-Score                : {f1:.2f}%")
-    print(f"   • ROC-AUC Score           : {auc:.2f}%")
-    print("\nClassification Detailed Metrics:\n", classification_report(y_test, y_pred, target_names=["Safe", "Fraud Alert"]))
+    print("\nHOLD-OUT TEST SET EVALUATION:")
+    print(f"   Accuracy        : {acc:.2f}%")
+    print(f"   Precision       : {prec:.2f}%")
+    print(f"   Recall          : {rec:.2f}%")
+    print(f"   F1-Score        : {f1:.2f}%")
+    print(f"   ROC-AUC Score   : {auc:.2f}%")
+    print("\nClassification Report:\n", classification_report(y_test, y_pred, target_names=["Safe", "Fraud Alert"]))
+    
+    # 5-Fold Stratified Cross-Validation
+    from sklearn.model_selection import cross_val_score
+    
+    print("[5/5] Running 5-Fold Stratified Cross-Validation...")
+    cv_scores = cross_val_score(full_pipeline, X, y, cv=5, scoring="f1")
+    cv_mean = cv_scores.mean() * 100
+    cv_std = cv_scores.std() * 100
+    print(f"   CV F1 Scores    : {[f'{s*100:.1f}%' for s in cv_scores]}")
+    print(f"   CV Mean F1      : {cv_mean:.2f}% (+/- {cv_std:.2f}%)")
+    
+    # Save metrics report as JSON for dashboard
+    import json
+    metrics_report = {
+        "model_type": "MLP + RandomForest + ExtraTrees Voting Ensemble",
+        "training_data": "Synthetic (12,000 samples)",
+        "training_data_disclaimer": "Model trained on synthetic data only. Retrain on real labeled data for production use.",
+        "holdout_accuracy": round(acc, 2),
+        "holdout_precision": round(prec, 2),
+        "holdout_recall": round(rec, 2),
+        "holdout_f1": round(f1, 2),
+        "holdout_roc_auc": round(auc, 2),
+        "cv_5fold_f1_mean": round(cv_mean, 2),
+        "cv_5fold_f1_std": round(cv_std, 2),
+    }
+    
+    metrics_path = os.path.join(data_dir, "model_metrics.json")
+    with open(metrics_path, "w") as f:
+        json.dump(metrics_report, f, indent=2)
+    print(f"\nMetrics report saved to: {metrics_path}")
     
     # Save Pipeline Model Artifacts
     models_dir = os.path.join(PROJECT_ROOT, "models")
@@ -164,8 +194,9 @@ def train_fine_tuned_transformer_rf_ensemble():
     
     # Also overwrite standard models for backward compatibility
     joblib.dump(full_pipeline, os.path.join(models_dir, "fraud_classifier.pkl"))
-    print(f"\n✅ Fine-Tuned Transformer & Random Forest Pipeline Saved to: {pipeline_path}")
+    print(f"\nPipeline saved to: {pipeline_path}")
     print("==================================================================")
 
 if __name__ == "__main__":
     train_fine_tuned_transformer_rf_ensemble()
+
