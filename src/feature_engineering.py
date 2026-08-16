@@ -4,6 +4,10 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any
 
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 PIPELINE_PATH = os.path.join(PROJECT_ROOT, "models", "transformer_rf_pipeline.pkl")
 MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "fraud_classifier.pkl")
@@ -16,7 +20,7 @@ def get_trained_pipeline():
         elif os.path.isfile(MODEL_PATH):
             return joblib.load(MODEL_PATH)
     except Exception as e:
-        print(f"Warning: Could not load ML pipeline: {e}")
+        logger.warning("Could not load ML pipeline: %s", e, exc_info=True)
     return None
 
 def prepare_feature_dataframe(clean_data: Dict[str, Any]) -> pd.DataFrame:
