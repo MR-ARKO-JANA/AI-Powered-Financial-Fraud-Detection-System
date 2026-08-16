@@ -1,5 +1,6 @@
 import os
 import sys
+import uuid
 
 # Ensure project root is on sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -7,80 +8,173 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
+from contextlib import asynccontextmanager
 
+from src.logging_config import setup_logging, get_logger, set_request_id, get_request_id
 from src.preprocess import clean_data
 from src.rules_engine import apply_rules, load_config, build_user_norms
 from src.ml_inference import get_ai_risk_score
-from src.database import init_db, log_transaction, fetch_all_logs, clear_logs
+from src.database import init_db, log_transaction, fetch_all_logs, clear_logs, get_db_status
 from src.alert_system import init_alerts_db, process_and_trigger_alert, fetch_active_alerts, submit_analyst_feedback, refine_and_retrain_model
+from src.auth import AuthMiddleware
+from src.rate_limiter import RateLimiterMiddleware
+
+# Initialize structured logging at startup
+setup_logging()
+logger = get_logger(__name__)
+
+# ─── Allowed CORS origins (configurable via environment) ───
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "FINGUARD_CORS_ORIGINS",
+        "http://localhost:8501,http://127.0.0.1:8501,http://localhost:8000,http://127.0.0.1:8000"
+    ).split(",")
+    if origin.strip()
+]
+
+# ─── Request / Response Models ───
+
+class RawTransaction(BaseModel):
+    transaction_id: str = Field(..., min_length=1, max_length=100, description="Unique transaction identifier")
+    client_id: str = Field(..., min_length=1, max_length=100, description="Client/user identifier")
+    amount: float = Field(..., ge=0.0, le=1_000_000.0, description="Transaction amount in USD")
+    date: str = Field(..., min_length=1, max_length=50, description="ISO 8601 date string")
+    merchant_id: str = Field(..., min_length=1, max_length=200, description="Merchant identifier")
+    use_chip: Optional[str] = Field("Online", max_length=50)
+    merchant_city: Optional[str] = Field("Unknown", max_length=100)
+    velocity_1h: Optional[int] = Field(1, ge=0, le=1000)
+    travel_speed_kmh: Optional[float] = Field(0.0, ge=0.0, le=50000.0)
+    ip_address: Optional[str] = Field("127.0.0.1", max_length=45)
+
+
+class FeedbackPayload(BaseModel):
+    alert_id: str = Field(..., min_length=1, max_length=100)
+    confirmed_is_fraud: bool
+    transaction_data: Optional[Dict[str, Any]] = None
+
+
+class AnalysisResponse(BaseModel):
+    Output_A_Summary: Dict[str, Any]
+    Output_B_Verdict: Dict[str, Any]
+    Output_C_Checklist: List[str]
+    Output_D_AlertTriggered: Optional[Dict[str, Any]] = None
+
+
+class BatchResponse(BaseModel):
+    batch_results: List[AnalysisResponse]
+
+
+class HealthResponse(BaseModel):
+    status: str
+    database: Dict[str, Any]
+    norms_cached_users: int
+    pending_alerts_count: int
+    gemini_api_active: bool
+    version: str
+
+
+# ─── Application Lifespan ───
+
+PRECOMPUTED_NORMS: Dict[str, Any] = {}
+CONFIG: Dict[str, Any] = {}
+
+# Maximum batch size for /analyze_batch
+MAX_BATCH_SIZE = 100
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application startup and shutdown lifecycle."""
+    global PRECOMPUTED_NORMS, CONFIG
+
+    logger.info("FinGuard AI starting up...")
+
+    # Initialize configuration & DB schemas
+    CONFIG = load_config(os.path.join(PROJECT_ROOT, "configs", "fraud_typology.json"))
+    init_db()
+    init_alerts_db()
+
+    # Precompute historical behavioral norms
+    try:
+        _data_path = os.path.join(PROJECT_ROOT, "data", "transactions_data.csv")
+        if not os.path.isfile(_data_path):
+            _data_path = os.path.join(PROJECT_ROOT, "data", "clean_transactions.csv")
+
+        if os.path.isfile(_data_path):
+            historical_df = pd.read_csv(_data_path)
+            PRECOMPUTED_NORMS = build_user_norms(historical_df)
+            logger.info("Historical norms loaded for %d unique clients.", len(PRECOMPUTED_NORMS))
+        else:
+            PRECOMPUTED_NORMS = {}
+            logger.warning("No historical dataset found. Starting with empty norms.")
+    except Exception as err:
+        logger.error("Failed to load historical norms: %s", err, exc_info=True)
+        PRECOMPUTED_NORMS = {}
+
+    logger.info("FinGuard AI ready. CORS origins: %s", ALLOWED_ORIGINS)
+    yield
+
+    # Shutdown
+    logger.info("FinGuard AI shutting down gracefully.")
+
+
+# ─── FastAPI Application ───
 
 app = FastAPI(
-    title="FinGuard AI — Fraud Detection & Alert System API",
-    description="High-performance real-time AI, Tabular Transformer, and Active Alert Refinement REST API.",
-    version="2.1.0"
+    title="FinGuard AI - Fraud Detection & Alert System API",
+    description="Production-grade real-time AI fraud detection with authentication, rate limiting, and structured logging.",
+    version="2.2.0",
+    lifespan=lifespan,
 )
 
-# Enable CORS for external dashboards and integrations
+# ─── Middleware Stack (order matters: outermost first) ───
+
+# 1. CORS — restricted to configured origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*", "X-API-Key", "X-Request-ID"],
+    expose_headers=["X-Request-ID"],
 )
+
+# 2. Rate Limiter
+app.add_middleware(RateLimiterMiddleware)
+
+# 3. Authentication & RBAC
+app.add_middleware(AuthMiddleware)
+
+
+# ─── Request ID Middleware ───
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Inject request correlation ID into every request/response cycle."""
+    incoming_id = request.headers.get("X-Request-ID")
+    request_id = set_request_id(incoming_id)
+    request.state.request_id = request_id
+
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
+# ─── Static Files ───
 
 WEBSITE_DIR = os.path.join(PROJECT_ROOT, "website")
 if os.path.isdir(WEBSITE_DIR):
     app.mount("/static", StaticFiles(directory=WEBSITE_DIR), name="static")
 
 
-class RawTransaction(BaseModel):
-    transaction_id: str
-    client_id: str
-    amount: float
-    date: str
-    merchant_id: str
-    use_chip: Optional[str] = "Online"
-    merchant_city: Optional[str] = "Unknown"
-    velocity_1h: Optional[int] = 1
-    travel_speed_kmh: Optional[float] = 0.0
-    ip_address: Optional[str] = "127.0.0.1"
-
-
-class FeedbackPayload(BaseModel):
-    alert_id: str
-    confirmed_is_fraud: bool
-    transaction_data: Optional[Dict[str, Any]] = None
-
-
-# Initialize configuration & DB schemas
-CONFIG = load_config(os.path.join(PROJECT_ROOT, "configs", "fraud_typology.json"))
-init_db()
-init_alerts_db()
-
-# Precompute historical behavioral norms
-PRECOMPUTED_NORMS: Dict[str, Any] = {}
-try:
-    _data_path = os.path.join(PROJECT_ROOT, "data", "transactions_data.csv")
-    if not os.path.isfile(_data_path):
-        _data_path = os.path.join(PROJECT_ROOT, "data", "clean_transactions.csv")
-    
-    if os.path.isfile(_data_path):
-        historical_df = pd.read_csv(_data_path)
-        PRECOMPUTED_NORMS = build_user_norms(historical_df)
-        print(f"✅ Historical norms loaded for {len(PRECOMPUTED_NORMS)} unique clients.")
-    else:
-        PRECOMPUTED_NORMS = {}
-except Exception as err:
-    print(f"⚠️ Historical dataset notice: {err}")
-    PRECOMPUTED_NORMS = {}
-
+# ─── Endpoints ───
 
 @app.get("/")
 def read_root():
@@ -90,8 +184,8 @@ def read_root():
     return {
         "status": "online",
         "service": "FinGuard AI Fraud Detection & Alert Engine",
-        "version": "2.1.0",
-        "endpoints": ["/showcase", "/health", "/analyze", "/analyze_batch", "/alerts", "/model/refine"]
+        "version": "2.2.0",
+        "endpoints": ["/showcase", "/health", "/v1/analyze", "/v1/analyze_batch", "/v1/alerts", "/v1/model/refine"]
     }
 
 
@@ -103,18 +197,23 @@ def read_showcase():
     raise HTTPException(status_code=404, detail="Showcase website file not found.")
 
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 def health_check():
+    db_status = get_db_status()
     return {
         "status": "healthy",
-        "database": os.path.isfile(os.path.join(PROJECT_ROOT, "data", "transactions_log.db")),
+        "database": db_status,
         "norms_cached_users": len(PRECOMPUTED_NORMS),
         "pending_alerts_count": len(fetch_active_alerts("PENDING")),
-        "gemini_api_active": bool(os.environ.get("GEMINI_API_KEY"))
+        "gemini_api_active": bool(os.environ.get("GEMINI_API_KEY")),
+        "version": "2.2.0",
     }
 
 
-@app.post("/analyze")
+# ─── V1 API Routes (versioned) ───
+
+@app.post("/v1/analyze", response_model=AnalysisResponse)
+@app.post("/analyze", response_model=AnalysisResponse, include_in_schema=False)
 async def process_transaction(tx: RawTransaction):
     try:
         input_df = pd.DataFrame([tx.model_dump()])
@@ -133,6 +232,13 @@ async def process_transaction(tx: RawTransaction):
         # Evaluate and Trigger Real-Time Model Alert
         triggered_alert = process_and_trigger_alert(clean_dict, ai_verdict, checklist)
 
+        logger.info(
+            "Transaction %s analyzed: risk=%.1f, type=%s",
+            tx.transaction_id,
+            ai_verdict.get("risk_score", 0),
+            ai_verdict.get("fraud_type", "UNKNOWN"),
+        )
+
         return {
             "Output_A_Summary": clean_dict,
             "Output_B_Verdict": ai_verdict,
@@ -141,13 +247,21 @@ async def process_transaction(tx: RawTransaction):
         }
 
     except Exception as e:
+        logger.error("Pipeline error for %s: %s", tx.transaction_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Pipeline error: {str(e)}")
 
 
-@app.post("/analyze_batch")
+@app.post("/v1/analyze_batch", response_model=BatchResponse)
+@app.post("/analyze_batch", response_model=BatchResponse, include_in_schema=False)
 async def process_batch(tx_list: List[RawTransaction]):
     if not tx_list:
         return {"batch_results": []}
+
+    if len(tx_list) > MAX_BATCH_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch size {len(tx_list)} exceeds maximum of {MAX_BATCH_SIZE}. Split into smaller batches."
+        )
 
     try:
         input_df = pd.DataFrame([tx.model_dump() for tx in tx_list])
@@ -171,31 +285,37 @@ async def process_batch(tx_list: List[RawTransaction]):
                 "Output_D_AlertTriggered": triggered_alert
             })
 
+        logger.info("Batch of %d transactions processed successfully.", len(tx_list))
         return {"batch_results": results}
 
     except Exception as e:
+        logger.error("Batch processing error: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Batch error: {str(e)}")
 
 
-@app.get("/alerts")
+@app.get("/v1/alerts")
+@app.get("/alerts", include_in_schema=False)
 def get_alerts(status: str = "PENDING"):
     alerts = fetch_active_alerts(status)
     return {"status": "success", "alerts_count": len(alerts), "alerts": alerts}
 
 
-@app.post("/alerts/resolve")
+@app.post("/v1/alerts/resolve")
+@app.post("/alerts/resolve", include_in_schema=False)
 def resolve_alert(payload: FeedbackPayload):
     res = submit_analyst_feedback(payload.alert_id, payload.confirmed_is_fraud, payload.transaction_data)
     return res
 
 
-@app.post("/model/refine")
+@app.post("/v1/model/refine")
+@app.post("/model/refine", include_in_schema=False)
 def trigger_model_refinement():
     res = refine_and_retrain_model()
     return res
 
 
-@app.get("/analytics")
+@app.get("/v1/analytics")
+@app.get("/analytics", include_in_schema=False)
 def get_analytics():
     df = fetch_all_logs()
     if df.empty:
@@ -221,7 +341,8 @@ def get_analytics():
     }
 
 
-@app.get("/analytics/codevalues")
+@app.get("/v1/analytics/codevalues")
+@app.get("/analytics/codevalues", include_in_schema=False)
 def get_codevalue_analytics():
     csv_path = os.path.join(PROJECT_ROOT, "data", "codevalue_accuracy_report.csv")
     if os.path.isfile(csv_path):
@@ -230,7 +351,24 @@ def get_codevalue_analytics():
     return {"status": "error", "message": "CodeValue report not generated yet. Run evaluate_codevalue_metrics.py."}
 
 
-@app.post("/logs/clear")
+@app.post("/v1/logs/clear")
+@app.post("/logs/clear", include_in_schema=False)
 def clear_all_logs():
     clear_logs()
     return {"message": "Transaction logs cleared successfully."}
+
+
+@app.get("/v1/metrics")
+@app.get("/metrics", include_in_schema=False)
+def get_operational_metrics():
+    """Basic operational metrics endpoint for monitoring."""
+    db_status = get_db_status()
+    return {
+        "service": "finguard-ai",
+        "version": "2.2.0",
+        "database_rows": db_status.get("total_rows", 0),
+        "database_healthy": db_status.get("status") == "healthy",
+        "norms_cached": len(PRECOMPUTED_NORMS),
+        "auth_enabled": bool(os.environ.get("FINGUARD_API_KEYS")),
+        "gemini_enabled": bool(os.environ.get("GEMINI_API_KEY")),
+    }
