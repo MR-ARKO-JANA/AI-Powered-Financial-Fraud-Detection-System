@@ -6,6 +6,9 @@ import pandas as pd
 from typing import Dict, Any, List
 from dotenv import load_dotenv
 from src.feature_engineering import prepare_feature_dataframe, get_trained_pipeline
+from src.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 load_dotenv()
 
@@ -39,14 +42,14 @@ def get_ai_risk_score(clean_data: Dict[str, Any], checklist: List[str]) -> Dict[
     for item in checklist:
         if any(kw in item for kw in ["PRESENT", "PARTIAL", "High", "Impossible", "Blacklisted", "Suspicious", "Anomaly", "Error"]):
             suspicious_count += 1
-            
+
     total_indicators = len(checklist) if len(checklist) > 0 else 1
     rules_risk_score = (suspicious_count / total_indicators) * 100.0
 
     # 2. Local Fine-Tuned Transformer & RF Ensemble Model Inference
     ml_fraud_probability = 0.0
     active_pipeline = ml_pipeline or get_trained_pipeline()
-    
+
     if active_pipeline is not None:
         try:
             df_feat = prepare_feature_dataframe(clean_data)
@@ -63,7 +66,7 @@ def get_ai_risk_score(clean_data: Dict[str, Any], checklist: List[str]) -> Dict[
                 probs = active_pipeline.predict_proba([[amt, vel, speed, hour]])[0]
                 ml_fraud_probability = float(probs[1]) * 100.0
             except Exception as err:
-                print(f"Fine-tuned Transformer ML inference warning: {e} | {err}")
+                logger.warning("ML inference fallback failed: %s | %s", e, err, exc_info=True)
 
     # Composite Risk Score Calculation
     composite_base_score = round((rules_risk_score * 0.35) + (ml_fraud_probability * 0.65), 2)
@@ -121,10 +124,11 @@ Return ONLY a valid JSON object matching this schema:
             if response and response.text:
                 ai_verdict = _clean_json_response(response.text)
                 ai_verdict["risk_score"] = float(ai_verdict.get("risk_score", composite_base_score))
+                logger.info("Gemini AI verdict received for transaction.")
                 return ai_verdict
 
         except Exception as err:
-            print(f"Gemini AI call notice (using local hybrid fallback): {err}")
+            logger.warning("Gemini AI call failed (using local hybrid fallback): %s", err)
 
     # Offline / Fallback Return
     return {
