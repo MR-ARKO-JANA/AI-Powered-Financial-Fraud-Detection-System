@@ -86,7 +86,7 @@ PRECOMPUTED_NORMS: Dict[str, Any] = {}
 CONFIG: Dict[str, Any] = {}
 
 # Maximum batch size for /analyze_batch
-MAX_BATCH_SIZE = 100
+MAX_BATCH_SIZE = 500
 
 
 @asynccontextmanager

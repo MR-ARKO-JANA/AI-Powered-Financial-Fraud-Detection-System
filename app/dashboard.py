@@ -1,5 +1,11 @@
 import streamlit as st
 import requests
+import functools
+
+# Automatically inject API key into all requests
+API_KEY_HEADERS = {"X-API-Key": "your-secret-admin-key"}
+requests.post = functools.partial(requests.post, headers=API_KEY_HEADERS)
+requests.get = functools.partial(requests.get, headers=API_KEY_HEADERS)
 import pandas as pd
 import sqlite3
 import os
@@ -259,6 +265,8 @@ with tab2:
                             "Alert Triggered": bool(item.get("Output_D_AlertTriggered"))
                         })
                     st.dataframe(pd.DataFrame(flat_data), use_container_width=True)
+                else:
+                    st.error(f"API Error ({resp.status_code}): {resp.text}")
         except Exception as err:
             st.error(f"Error reading file: {err}")
 
