@@ -1,6 +1,7 @@
 import os
 import sys
 import uuid
+import asyncio
 
 # Ensure project root is on sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -86,7 +87,7 @@ PRECOMPUTED_NORMS: Dict[str, Any] = {}
 CONFIG: Dict[str, Any] = {}
 
 # Maximum batch size for /analyze_batch
-MAX_BATCH_SIZE = 500
+MAX_BATCH_SIZE = int(os.environ.get("MAX_BATCH_SIZE", "100"))
 
 
 @asynccontextmanager
@@ -268,25 +269,29 @@ async def process_batch(tx_list: List[RawTransaction]):
         cleaned_df = clean_data(input_df)
         final_df = apply_rules(cleaned_df, CONFIG, precomputed_norms=PRECOMPUTED_NORMS)
 
-        results = []
-        for i in range(len(final_df)):
-            result_row = final_df.iloc[i]
-            checklist = result_row.get("suspicious_indicators_checklist", [])
-            clean_dict = cleaned_df.iloc[i].to_dict()
+        semaphore = asyncio.Semaphore(10)
 
-            ai_verdict = get_ai_risk_score(clean_dict, checklist)
-            log_transaction(clean_dict, ai_verdict, checklist)
-            triggered_alert = process_and_trigger_alert(clean_dict, ai_verdict, checklist)
+        async def process_one(i: int) -> dict:
+            async with semaphore:
+                result_row = final_df.iloc[i]
+                checklist = result_row.get("suspicious_indicators_checklist", [])
+                clean_dict = cleaned_df.iloc[i].to_dict()
+                loop = asyncio.get_event_loop()
+                ai_verdict = await loop.run_in_executor(
+                    None, get_ai_risk_score, clean_dict, checklist
+                )
+                log_transaction(clean_dict, ai_verdict, checklist)
+                triggered_alert = process_and_trigger_alert(clean_dict, ai_verdict, checklist)
+                return {
+                    "Output_A_Summary": clean_dict,
+                    "Output_B_Verdict": ai_verdict,
+                    "Output_C_Checklist": checklist,
+                    "Output_D_AlertTriggered": triggered_alert
+                }
 
-            results.append({
-                "Output_A_Summary": clean_dict,
-                "Output_B_Verdict": ai_verdict,
-                "Output_C_Checklist": checklist,
-                "Output_D_AlertTriggered": triggered_alert
-            })
-
+        results = await asyncio.gather(*[process_one(i) for i in range(len(final_df))])
         logger.info("Batch of %d transactions processed successfully.", len(tx_list))
-        return {"batch_results": results}
+        return {"batch_results": list(results)}
 
     except Exception as e:
         logger.error("Batch processing error: %s", e, exc_info=True)

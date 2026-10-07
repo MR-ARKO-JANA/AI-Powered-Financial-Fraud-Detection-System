@@ -1,49 +1,68 @@
+version: "3.9"
+
 services:
-  finguard-backend:
-    build: .
-    container_name: finguard_backend
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: finguard_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: finguard
+      POSTGRES_PASSWORD: finguard_secret
+      POSTGRES_DB: finguard_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finguard -d finguard_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: finguard_redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  finguard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: finguard_app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://finguard:finguard_secret@postgres:5432/finguard_db
+      REDIS_URL: redis://redis:6379/0
+      APP_ENV: production
     ports:
       - "8000:8000"
-    command: python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
-    environment:
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - FINGUARD_API_KEYS=${FINGUARD_API_KEYS}
-      - FINGUARD_CORS_ORIGINS=http://localhost:8501,http://finguard-dashboard:8501
+      - "8501:8501"
     volumes:
-      - finguard-data:/app/data
-    restart: always
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: "1.0"
+      - ./models:/app/models
+      - ./data:/app/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
+      start_period: 20s
       retries: 3
-      start_period: 15s
-
-  finguard-dashboard:
-    build: .
-    container_name: finguard_dashboard
-    ports:
-      - "8501:8501"
-    command: python -m streamlit run app/dashboard.py --server.port 8501 --server.address 0.0.0.0
-    environment:
-      - API_URL=http://finguard-backend:8000
-    volumes:
-      - finguard-data:/app/data
-    depends_on:
-      finguard-backend:
-        condition: service_healthy
-    restart: always
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: "0.5"
 
 volumes:
-  finguard-data:
+  postgres_data:
     driver: local

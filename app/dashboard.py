@@ -1,11 +1,12 @@
 import streamlit as st
 import requests
-import functools
 
 # Automatically inject API key into all requests
-API_KEY_HEADERS = {"X-API-Key": "your-secret-admin-key"}
-requests.post = functools.partial(requests.post, headers=API_KEY_HEADERS)
-requests.get = functools.partial(requests.get, headers=API_KEY_HEADERS)
+API_KEY_HEADERS = {"X-API-Key": "3836IjtQ0Sc5K1qva3KekMBaW78LY7vx9aTI6LpsZM0STGw5"}
+
+# Create a persistent session with auth headers
+_session = requests.Session()
+_session.headers.update(API_KEY_HEADERS)
 import pandas as pd
 import sqlite3
 import os
@@ -90,7 +91,7 @@ st.markdown("""
 # Check API Connectivity
 def check_api():
     try:
-        r = requests.get(f"{API_URL}/health", timeout=2)
+        r = _session.get(f"{API_URL}/health", timeout=2)
         return r.status_code == 200
     except Exception:
         return False
@@ -109,7 +110,7 @@ st.sidebar.markdown("[🌐 Open Presentation Landing Page](http://127.0.0.1:8000
 
 # Dynamic metrics from API
 try:
-    metrics_resp = requests.get(f"{API_URL}/metrics", timeout=2)
+    metrics_resp = _session.get(f"{API_URL}/metrics", timeout=2)
     if metrics_resp.status_code == 200:
         metrics_data = metrics_resp.json()
         st.sidebar.markdown(f"**DB Rows**: `{metrics_data.get('database_rows', 'N/A')}`")
@@ -167,7 +168,7 @@ with tab1:
 
         try:
             with st.spinner("Executing Transformer & RF model inference..."):
-                resp = requests.post(f"{API_URL}/analyze", json=payload, timeout=8)
+                resp = _session.post(f"{API_URL}/analyze", json=payload, timeout=8)
 
             if resp.status_code == 200:
                 data = resp.json()
@@ -245,8 +246,8 @@ with tab2:
                 })
 
             if st.button("Process Batch & Trigger Alerts", type="primary"):
-                with st.spinner("Analyzing batch transactions..."):
-                    resp = requests.post(f"{API_URL}/analyze_batch", json=tx_list, timeout=30)
+                with st.spinner(f"Analyzing {len(tx_list)} transactions in parallel (this may take up to 60s)..."):
+                    resp = _session.post(f"{API_URL}/analyze_batch", json=tx_list, timeout=120)
 
                 if resp.status_code == 200:
                     batch_res = resp.json().get("batch_results", [])
@@ -264,7 +265,83 @@ with tab2:
                             "Risk Score": v.get("risk_score"),
                             "Alert Triggered": bool(item.get("Output_D_AlertTriggered"))
                         })
-                    st.dataframe(pd.DataFrame(flat_data), use_container_width=True)
+                    df_results = pd.DataFrame(flat_data)
+                    st.dataframe(df_results, use_container_width=True)
+
+                    # ── Charts ──────────────────────────────────────────
+                    st.divider()
+                    st.markdown("### 📊 Batch Analysis Insights")
+                    ch1, ch2, ch3 = st.columns(3)
+
+                    # Chart 1: Risk Score Distribution (histogram)
+                    with ch1:
+                        st.markdown("**Risk Score Distribution**")
+                        fig_hist = px.histogram(
+                            df_results, x="Risk Score",
+                            nbins=20,
+                            color_discrete_sequence=["#6366f1"],
+                            labels={"Risk Score": "Risk Score (0-100)"}
+                        )
+                        fig_hist.update_layout(
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            font=dict(color="#f3f4f6"),
+                            margin=dict(l=10, r=10, t=30, b=10),
+                            height=280
+                        )
+                        st.plotly_chart(fig_hist, use_container_width=True)
+
+                    # Chart 2: Fraud Type Breakdown (pie)
+                    with ch2:
+                        st.markdown("**Fraud Type Breakdown**")
+                        fraud_counts = df_results["Fraud Type"].value_counts().reset_index()
+                        fraud_counts.columns = ["Fraud Type", "Count"]
+                        fig_pie = px.pie(
+                            fraud_counts, names="Fraud Type", values="Count",
+                            color_discrete_sequence=["#ef4444", "#f59e0b", "#10b981", "#6366f1"]
+                        )
+                        fig_pie.update_layout(
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            font=dict(color="#f3f4f6"),
+                            margin=dict(l=10, r=10, t=30, b=10),
+                            height=280,
+                            showlegend=True,
+                            legend=dict(font=dict(size=10))
+                        )
+                        st.plotly_chart(fig_pie, use_container_width=True)
+
+                    # Chart 3: Alert Triggered vs Safe (bar)
+                    with ch3:
+                        st.markdown("**Alerts Triggered**")
+                        alert_counts = df_results["Alert Triggered"].value_counts().reset_index()
+                        alert_counts.columns = ["Alert", "Count"]
+                        alert_counts["Alert"] = alert_counts["Alert"].map({True: "🚨 Alert", False: "✅ Safe"})
+                        fig_bar = px.bar(
+                            alert_counts, x="Alert", y="Count",
+                            color="Alert",
+                            color_discrete_map={"🚨 Alert": "#ef4444", "✅ Safe": "#10b981"}
+                        )
+                        fig_bar.update_layout(
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            font=dict(color="#f3f4f6"),
+                            margin=dict(l=10, r=10, t=30, b=10),
+                            showlegend=False,
+                            height=280
+                        )
+                        st.plotly_chart(fig_bar, use_container_width=True)
+
+                    # Summary KPIs
+                    st.markdown("### 📈 Summary")
+                    km1, km2, km3, km4 = st.columns(4)
+                    total_tx = len(df_results)
+                    fraud_tx = len(df_results[df_results["Risk Score"] >= 50])
+                    alert_tx = int(df_results["Alert Triggered"].sum())
+                    avg_risk = round(df_results["Risk Score"].mean(), 1)
+                    km1.metric("Total Processed", total_tx)
+                    km2.metric("Fraud Flagged (≥50)", fraud_tx)
+                    km3.metric("Alerts Triggered", alert_tx)
+                    km4.metric("Avg Risk Score", f"{avg_risk}/100")
                 else:
                     st.error(f"API Error ({resp.status_code}): {resp.text}")
         except Exception as err:
@@ -289,7 +366,7 @@ with tab3:
             "travel_speed_kmh": round(random.uniform(900, 2500) if is_susp else random.uniform(0, 40), 1),
             "ip_address": "185.220.101.5" if is_susp else "192.168.1.1"
         }
-        r = requests.post(f"{API_URL}/analyze", json=mock_tx, timeout=5)
+        r = _session.post(f"{API_URL}/analyze", json=mock_tx, timeout=5)
         if r.status_code == 200:
             res = r.json()
             v = res.get("Output_B_Verdict", {})
@@ -306,14 +383,14 @@ with tab4:
     with col_btn2:
         if st.button("⚡ Refine & Retrain Transformer Model Now", type="primary"):
             with st.spinner("Retraining & Refining Tabular Transformer & RF Ensemble Model..."):
-                r_ref = requests.post(f"{API_URL}/model/refine")
+                r_ref = _session.post(f"{API_URL}/model/refine", timeout=30)
                 if r_ref.status_code == 200:
                     st.success("Model refined & re-deployed successfully!")
                 else:
                     st.error("Refinement failed.")
 
     try:
-        r_alerts = requests.get(f"{API_URL}/alerts?status=PENDING", timeout=3)
+        r_alerts = _session.get(f"{API_URL}/alerts?status=PENDING", timeout=10)
         if r_alerts.status_code == 200:
             alerts_data = r_alerts.json().get("alerts", [])
             
@@ -329,12 +406,12 @@ with tab4:
                         f_col1, f_col2 = st.columns(2)
                         with f_col1:
                             if st.button("Confirm Actual Fraud", key=f"conf_{alt['alert_id']}"):
-                                requests.post(f"{API_URL}/alerts/resolve", json={"alert_id": alt['alert_id'], "confirmed_is_fraud": True})
+                                _session.post(f"{API_URL}/alerts/resolve", json={"alert_id": alt['alert_id'], "confirmed_is_fraud": True})
                                 st.toast(f"Alert {alt['alert_id']} confirmed as fraud!")
                                 st.rerun()
                         with f_col2:
                             if st.button("❎ Mark False Positive", key=f"fp_{alt['alert_id']}"):
-                                requests.post(f"{API_URL}/alerts/resolve", json={"alert_id": alt['alert_id'], "confirmed_is_fraud": False})
+                                _session.post(f"{API_URL}/alerts/resolve", json={"alert_id": alt['alert_id'], "confirmed_is_fraud": False})
                                 st.toast(f"Alert {alt['alert_id']} marked as False Positive.")
                                 st.rerun()
     except Exception as e:
@@ -356,6 +433,75 @@ with tab5:
         k2.metric("Fraud Flagged", fraud_cnt)
         k3.metric("Avg Risk Score", f"{df_db['composite_risk_score'].mean():.1f}/100")
         st.dataframe(df_db[["transaction_id", "client_id", "amount", "merchant_id", "fraud_type", "composite_risk_score", "ai_reason", "timestamp"]].head(25), use_container_width=True)
+
+        # ── Risk Intelligence Charts ──
+        st.divider()
+        st.subheader("📈 Risk Analytics Dashboard")
+
+        ri_col1, ri_col2 = st.columns(2)
+
+        with ri_col1:
+            # Risk Score Over Time (Scatter)
+            if "timestamp" in df_db.columns:
+                fig_timeline = px.scatter(
+                    df_db.head(200), x="timestamp", y="composite_risk_score",
+                    color="fraud_type",
+                    title="Risk Score Timeline",
+                    labels={"composite_risk_score": "Risk Score", "timestamp": "Time"},
+                    color_discrete_sequence=px.colors.qualitative.Vivid,
+                    size="composite_risk_score",
+                    size_max=12,
+                )
+                fig_timeline.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#e2e8f0"),
+                    title_font=dict(size=16, color="#c7d2fe"),
+                    xaxis=dict(gridcolor="rgba(255,255,255,0.1)"),
+                    yaxis=dict(gridcolor="rgba(255,255,255,0.1)"),
+                )
+                st.plotly_chart(fig_timeline, use_container_width=True)
+
+        with ri_col2:
+            # Fraud Type Distribution
+            ft_counts = df_db["fraud_type"].value_counts().reset_index()
+            ft_counts.columns = ["Fraud Type", "Count"]
+            fig_ft = px.bar(
+                ft_counts, x="Fraud Type", y="Count",
+                title="Fraud Classification Distribution",
+                color="Fraud Type",
+                color_discrete_sequence=px.colors.sequential.Plasma_r,
+            )
+            fig_ft.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#e2e8f0"),
+                title_font=dict(size=16, color="#c7d2fe"),
+                xaxis=dict(gridcolor="rgba(255,255,255,0.1)"),
+                yaxis=dict(gridcolor="rgba(255,255,255,0.1)"),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_ft, use_container_width=True)
+
+        # Amount vs Risk Score scatter
+        if "amount" in df_db.columns:
+            fig_scatter = px.scatter(
+                df_db.head(200), x="amount", y="composite_risk_score",
+                color="fraud_type",
+                title="Transaction Amount vs Risk Score",
+                labels={"amount": "Amount ($)", "composite_risk_score": "Risk Score"},
+                color_discrete_sequence=px.colors.qualitative.Bold,
+                opacity=0.7,
+            )
+            fig_scatter.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#e2e8f0"),
+                title_font=dict(size=16, color="#c7d2fe"),
+                xaxis=dict(gridcolor="rgba(255,255,255,0.1)"),
+                yaxis=dict(gridcolor="rgba(255,255,255,0.1)"),
+            )
+            st.plotly_chart(fig_scatter, use_container_width=True)
 
 
 # TAB 6: System Specifications

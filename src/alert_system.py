@@ -84,7 +84,6 @@ def process_and_trigger_alert(clean_data: Dict[str, Any], ai_verdict: Dict[str, 
     Evaluates transaction verdict against alert thresholds.
     Triggers an alert if risk_score >= 65.0 or suspicious rules are present.
     """
-    init_alerts_db()
 
     risk_score = float(ai_verdict.get("risk_score", 0.0))
     fraud_type = str(ai_verdict.get("fraud_type", "UNKNOWN"))
@@ -143,7 +142,6 @@ def process_and_trigger_alert(clean_data: Dict[str, Any], ai_verdict: Dict[str, 
 
 def fetch_active_alerts(status: str = "PENDING") -> List[Dict[str, Any]]:
     """Fetch pending or resolved model alerts."""
-    init_alerts_db()
     try:
         with get_connection() as conn:
             cursor = conn.cursor()
@@ -160,7 +158,6 @@ def submit_analyst_feedback(alert_id: str, confirmed_is_fraud: bool, clean_data:
     Submits human analyst feedback (Confirmed Fraud vs False Positive).
     Updates alert status and logs feedback sample for model refinement.
     """
-    init_alerts_db()
     try:
         with get_connection() as conn:
             cursor = conn.cursor()
@@ -172,6 +169,14 @@ def submit_analyst_feedback(alert_id: str, confirmed_is_fraud: bool, clean_data:
             )
 
             if clean_data:
+                hour_of_day = 12
+                date_str = clean_data.get("date", "")
+                if date_str:
+                    try:
+                        from dateutil import parser as dp
+                        hour_of_day = dp.parse(str(date_str)).hour
+                    except Exception:
+                        pass
                 cursor.execute('''
                     INSERT INTO training_feedback_logs (
                         transaction_id, client_id, amount, velocity_1h, travel_speed_kmh,
@@ -183,7 +188,7 @@ def submit_analyst_feedback(alert_id: str, confirmed_is_fraud: bool, clean_data:
                     float(clean_data.get("amount", 0.0)),
                     int(clean_data.get("velocity_1h", 1)),
                     float(clean_data.get("travel_speed_kmh", 0.0)),
-                    12,
+                    hour_of_day,
                     str(clean_data.get("merchant_id", "UNKNOWN")),
                     str(clean_data.get("use_chip", "Online")),
                     str(clean_data.get("merchant_city", "Unknown")),

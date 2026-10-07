@@ -1,8 +1,13 @@
+"""
+ml_inference.py -- Machine learning inference & GenAI hybrid reasoning.
+"""
 import os
 import json
 import joblib
 import numpy as np
 import pandas as pd
+import concurrent.futures
+import time
 from typing import Dict, Any, List
 from dotenv import load_dotenv
 from src.feature_engineering import prepare_feature_dataframe, get_trained_pipeline
@@ -13,6 +18,8 @@ logger = get_logger(__name__)
 load_dotenv()
 
 MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_TIMEOUT = int(os.environ.get("GEMINI_TIMEOUT_SECONDS", "8"))
+GEMINI_MAX_RETRIES = 2
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # Load Local Fine-Tuned Transformer & RF Ensemble Pipeline
@@ -30,6 +37,33 @@ def _clean_json_response(raw_text: str) -> Dict[str, Any]:
             clean = clean.rsplit("```json", 1)[0]
     clean = clean.replace("```json", "").replace("```", "").strip()
     return json.loads(clean)
+
+
+def _call_gemini_with_retry(prompt: str, api_key: str) -> Dict[str, Any]:
+    """Gemini call with ThreadPoolExecutor timeout + exponential backoff."""
+    from google import genai
+    client = genai.Client(api_key=api_key)
+    last_err = None
+    for attempt in range(1, GEMINI_MAX_RETRIES + 1):
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(client.models.generate_content, model=MODEL_NAME, contents=prompt)
+                response = future.result(timeout=GEMINI_TIMEOUT)
+            if response and response.text:
+                return _clean_json_response(response.text)
+        except concurrent.futures.TimeoutError:
+            logger.warning("Gemini timeout (attempt %d/%d).", attempt, GEMINI_MAX_RETRIES)
+            last_err = "Timeout"
+        except json.JSONDecodeError as e:
+            logger.warning("Gemini bad JSON (attempt %d): %s", attempt, e)
+            last_err = str(e)
+            break
+        except Exception as e:
+            logger.warning("Gemini error (attempt %d): %s", attempt, e)
+            last_err = str(e)
+        if attempt < GEMINI_MAX_RETRIES:
+            time.sleep(attempt * 1.5)
+    raise RuntimeError(f"Gemini failed: {last_err}")
 
 
 def get_ai_risk_score(clean_data: Dict[str, Any], checklist: List[str]) -> Dict[str, Any]:
@@ -82,13 +116,10 @@ def get_ai_risk_score(clean_data: Dict[str, Any], checklist: List[str]) -> Dict[
         default_type = "Safe/Legitimate"
         default_reason = f"Low risk score ({composite_base_score:.1f}/100) with standard user behavior."
 
-    # 3. Call Google Gemini GenAI if API Key is configured
+    # 3. Call Google Gemini GenAI if API Key is configured and not placeholder
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if api_key:
+    if api_key and not api_key.startswith("your-"):
         try:
-            from google import genai
-            client = genai.Client(api_key=api_key)
-
             prompt = f"""
 You are an expert financial fraud investigation AI.
 Review this financial transaction payload:
@@ -115,20 +146,12 @@ Return ONLY a valid JSON object matching this schema:
   "reason": "Clear concise analytical sentence explaining the decision."
 }}
 """
-
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=prompt
-            )
-
-            if response and response.text:
-                ai_verdict = _clean_json_response(response.text)
-                ai_verdict["risk_score"] = float(ai_verdict.get("risk_score", composite_base_score))
-                logger.info("Gemini AI verdict received for transaction.")
-                return ai_verdict
-
+            verdict = _call_gemini_with_retry(prompt, api_key)
+            verdict["risk_score"] = float(verdict.get("risk_score", composite_base_score))
+            logger.info("Gemini AI verdict received for transaction.")
+            return verdict
         except Exception as err:
-            logger.warning("Gemini AI call failed (using local hybrid fallback): %s", err)
+            logger.warning("Gemini unavailable -- local hybrid fallback: %s", err)
 
     # Offline / Fallback Return
     return {

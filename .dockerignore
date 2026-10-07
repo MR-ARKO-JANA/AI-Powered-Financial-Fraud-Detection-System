@@ -47,3 +47,15 @@ htmlcov/
 
 # Documentation build
 docs/_build/
+
+# ─── Docker ───
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# ─── Tests & CI ───
+tests/
+.github/
+
+# ─── Misc ───
+README.md

@@ -126,7 +126,7 @@ def train_and_save():
     print(f"Models saved to: {models_dir}")
     
     # Save seed transaction data
-    sample_df = generate_sample_transactions_csv(150)
+    sample_df = generate_sample_transactions_csv(100)
     sample_path = os.path.join(data_dir, "transactions_data.csv")
     sample_df.to_csv(sample_path, index=False)
     print(f"Seed transactions CSV generated ({len(sample_df)} rows) at: {sample_path}")

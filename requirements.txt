@@ -1,14 +1,38 @@
+# FinGuard AI -- Production Requirements
+
+# Web Framework
 fastapi==0.115.6
-uvicorn==0.34.0
+uvicorn[standard]==0.34.0
 pydantic==2.10.5
+
+# Data & ML
 pandas==2.2.3
 numpy==2.2.2
-requests==2.32.3
-streamlit==1.41.1
-google-genai==1.5.0
-python-dotenv==1.0.1
 scikit-learn==1.6.1
 joblib==1.4.2
+
+# Dashboard & Visualization
+streamlit==1.41.1
 plotly==6.0.0
+
+# AI
+google-genai==1.5.0
+
+# HTTP & Utilities
+requests==2.32.3
+python-dotenv==1.0.1
+python-dateutil>=2.9.0
+
+# Production Database (PostgreSQL)
+psycopg2-binary>=2.9.9
+
+# Production Rate Limiting (Redis)
+redis>=5.0.0
+
+# Production Security (bcrypt)
+bcrypt>=4.1.2
+
+# Testing
 pytest==8.3.4
 httpx>=0.28.1
+pytest-asyncio>=0.23.0
